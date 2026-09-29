@@ -65,14 +65,14 @@ def prepare_selected_download(
     """Build one direct file or one ZIP containing only the chosen exports."""
     if not selections:
         raise ValueError("Select at least one export.")
-    files = export_bundle(
-        result,
-        selections,
-        theme=theme,
-        portable_html=portable_html,
-        price_options=price_options,
-        stamp=stamp,
-    )
+    export_options = {
+        "theme": theme,
+        "portable_html": portable_html,
+        "price_options": price_options,
+    }
+    if stamp is not None:
+        export_options["stamp"] = stamp
+    files = export_bundle(result, selections, **export_options)
     if len(files) == 1:
         filename, payload = next(iter(files.items()))
         mime = "text/html" if filename.endswith(".html") else "text/csv"
@@ -97,14 +97,14 @@ def prepare_complete_package(
 ) -> PreparedDownload:
     """Build the complete applicable research package on demand."""
     report_date = (stamp or date.today()).isoformat()
-    files = export_bundle(
-        result,
-        complete_export_keys(result),
-        theme=theme,
-        portable_html=portable_html,
-        price_options=price_options,
-        stamp=stamp,
-    )
+    export_options = {
+        "theme": theme,
+        "portable_html": portable_html,
+        "price_options": price_options,
+    }
+    if stamp is not None:
+        export_options["stamp"] = stamp
+    files = export_bundle(result, complete_export_keys(result), **export_options)
     filename = f"{safe_ticker(result.ticker)}_Equity_Lifetime_Explorer_{report_date}.zip"
     return PreparedDownload(
         filename,

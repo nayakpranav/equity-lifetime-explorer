@@ -3,6 +3,9 @@ import io
 import zipfile
 from datetime import date
 
+import pytest
+
+import src.downloads as downloads
 from src.downloads import (
     DATA_EXPORTS,
     REPORT_EXPORTS,
@@ -52,6 +55,9 @@ def test_combined_report_sections_and_single_plotly_payload(synthetic_result):
         "Methodology &amp; Provenance",
     ):
         assert heading in cdn
+    for anchor in ("overview", "price", "volume", "dividends", "actions", "validation", "methodology"):
+        assert f"href='#{anchor}'" in cdn
+        assert f"id='{anchor}'" in cdn
     assert cdn.count("https://cdn.plot.ly/") == 1
     assert portable.count("plotly.js v") == 1
     assert len(cdn) < len(portable)
@@ -119,3 +125,38 @@ def test_complete_packages_include_only_applicable_exports(synthetic_result):
     assert not any("dividend_total_return" in name for name in names)
     assert not any("dividend_summary" in name for name in names)
     assert any("complete_research_report" in name for name in names)
+
+
+def test_runtime_download_call_does_not_forward_none_stamp(monkeypatch, synthetic_result):
+    original = downloads.export_bundle
+    received = {}
+
+    def legacy_signature(result, selections, *, theme, portable_html, price_options):
+        received.update(
+            theme=theme,
+            portable_html=portable_html,
+            price_options=price_options,
+        )
+        return original(
+            result,
+            selections,
+            theme=theme,
+            portable_html=portable_html,
+            price_options=price_options,
+        )
+
+    monkeypatch.setattr(downloads, "export_bundle", legacy_signature)
+    prepared = downloads.prepare_selected_download(
+        synthetic_result, ["lifetime_html"], theme="dark"
+    )
+    assert prepared.filename.endswith(".html")
+    assert received["theme"] == "dark"
+
+
+def test_export_failures_propagate_below_ui_boundary(monkeypatch, synthetic_result):
+    def fail_export(*_args, **_kwargs):
+        raise TypeError("deterministic export failure")
+
+    monkeypatch.setattr(downloads, "export_bundle", fail_export)
+    with pytest.raises(TypeError, match="deterministic export failure"):
+        downloads.prepare_selected_download(synthetic_result, ["lifetime_html"])

@@ -129,12 +129,20 @@ def render_dividend_workspace(result, theme: str) -> None:
     scale_label = st.segmented_control(
         "Wealth-chart scale", ["Log", "Linear"], default="Log", key="dividend_scale"
     )
+    horizon = st.segmented_control(
+        "Dividend horizon", ["1Y", "5Y", "10Y", "MAX"], default="MAX", key="dividend_horizon"
+    )
     st.markdown(kpi_grid_html(dividend_kpi_cards(result)), unsafe_allow_html=True)
     st.markdown(
         secondary_facts_html(dividend_secondary_facts(result)),
         unsafe_allow_html=True,
     )
-    figure = build_dividend_chart(result, theme=theme, wealth_scale=scale_label.lower())
+    figure = build_dividend_chart(
+        result,
+        theme=theme,
+        wealth_scale=scale_label.lower(),
+        horizon=horizon,
+    )
     st.plotly_chart(figure, width="stretch", theme=None, config={"displaylogo": False, "responsive": True})
     st.markdown("#### Annual Dividend Summary")
     st.dataframe(dividend_summary_display(result).tail(15), width="stretch", hide_index=True)
@@ -186,6 +194,15 @@ def _price_export_options(controls: dict) -> dict:
         "show_volume": controls["show_volume"],
         "show_drawdown": controls["show_drawdown"],
     }
+
+
+def _export_context(result, controls: dict) -> tuple:
+    price_options = _price_export_options(controls)
+    return (
+        result.ticker,
+        controls["theme"],
+        tuple(sorted(price_options.items())),
+    )
 
 
 @st.dialog("Download Center", width="large")
@@ -244,28 +261,48 @@ def render_download_center(result, controls: dict) -> None:
         if not selected:
             st.warning("Select at least one report or data export.")
         else:
-            with st.spinner("Preparing selected exports…"):
-                st.session_state.prepared_download = prepare_selected_download(
+            try:
+                with st.spinner("Preparing selected exports…"):
+                    st.session_state.prepared_download = prepare_selected_download(
+                        result,
+                        selected,
+                        theme=controls["theme"],
+                        portable_html=portable,
+                        price_options=price_options,
+                    )
+                    st.session_state.prepared_export_context = _export_context(result, controls)
+            except Exception:
+                logging.getLogger("equity_lifetime_explorer").exception(
+                    "Selected export generation failed for %s", result.ticker
+                )
+                st.session_state.prepared_download = None
+                st.error(
+                    "Export generation failed. The analysis remains available; "
+                    "please retry or choose another export."
+                )
+
+    if prepare_complete:
+        try:
+            with st.spinner("Building the complete analysis package…"):
+                st.session_state.prepared_download = prepare_complete_package(
                     result,
-                    selected,
                     theme=controls["theme"],
                     portable_html=portable,
                     price_options=price_options,
                 )
-                st.session_state.prepared_export_ticker = result.ticker
-
-    if prepare_complete:
-        with st.spinner("Building the complete analysis package…"):
-            st.session_state.prepared_download = prepare_complete_package(
-                result,
-                theme=controls["theme"],
-                portable_html=portable,
-                price_options=price_options,
+                st.session_state.prepared_export_context = _export_context(result, controls)
+        except Exception:
+            logging.getLogger("equity_lifetime_explorer").exception(
+                "Complete export generation failed for %s", result.ticker
             )
-            st.session_state.prepared_export_ticker = result.ticker
+            st.session_state.prepared_download = None
+            st.error(
+                "Export generation failed. The analysis remains available; "
+                "please retry or choose another export."
+            )
 
     prepared = st.session_state.get("prepared_download")
-    if st.session_state.get("prepared_export_ticker") != result.ticker:
+    if st.session_state.get("prepared_export_context") != _export_context(result, controls):
         prepared = None
     if prepared is not None:
         st.success(prepared.status)
@@ -285,7 +322,12 @@ with st.sidebar:
     st.caption("Price History · Corporate Actions · Liquidity · Dividends")
     ticker = st.text_input("Ticker", value="KO", max_chars=25, placeholder="NVDA, SAP.DE, RELIANCE.NS")
     st.caption("Examples: NVDA · AAPL · MSFT · GOOG · AMZN · SAP.DE · ASML · RELIANCE.NS")
-    price_label = st.selectbox("Price view", ["No-Split Equivalent", "Raw As-Traded", "Provider Adjusted", "Overlay"])
+    price_label = st.radio(
+        "PRICE VIEW",
+        ["No-Split Equivalent", "Raw As-Traded", "Provider Adjusted", "Overlay"],
+        index=0,
+        key="price_view",
+    )
     scale_label = st.radio("Price scale", ["Log", "Linear"], horizontal=True)
     st.markdown("**Chart components**")
     show_splits = st.checkbox("Corporate actions", value=True)
@@ -316,7 +358,7 @@ if analyze_clicked:
             result = analyze(ticker, force_refresh)
             st.session_state.analysis_result = result
             st.session_state.prepared_download = None
-            st.session_state.prepared_export_ticker = None
+            st.session_state.prepared_export_context = None
         st.toast(f"{result.metadata.ticker} analysis complete", icon="✅")
     except ValueError as exc:
         st.error(f"Invalid ticker: {exc}")

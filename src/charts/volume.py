@@ -15,6 +15,15 @@ from .common import (
     display_result, downsample_for_plot,
 )
 
+
+def _rvol_axis_upper(values: pd.Series, *, padding: float = 0.15) -> float:
+    """Return a finite display bound with headroom, without altering RVOL data."""
+    numeric = pd.to_numeric(values, errors="coerce").to_numpy(dtype=float)
+    finite = numeric[np.isfinite(numeric) & (numeric >= 0)]
+    if finite.size == 0:
+        return 2.2
+    return max(2.2, float(finite.max()) * (1.0 + max(0.0, float(padding))))
+
 def _empty_volume_figure(result: AnalysisResult, theme: str) -> go.Figure:
     palette = THEMES[theme]
     fig = go.Figure()
@@ -49,8 +58,8 @@ def build_volume_liquidity_figure(
     prefix, suffix = currency_parts(currency)
 
     fig = make_subplots(
-        rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.035,
-        row_heights=[0.35, 0.30, 0.20, 0.15],
+        rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+        row_heights=[0.34, 0.29, 0.21, 0.16],
         specs=[[{}], [{}], [{}], [{}]],
     )
     price_frame = downsample_for_plot(prices, result.actions["date"], max_points=6000)
@@ -269,7 +278,11 @@ def build_volume_liquidity_figure(
     )
     fig.update_yaxes(title_text=f"Raw Price ({currency})", type="log", showgrid=True, gridcolor=palette["grid"], zeroline=False, row=1, col=1)
     fig.update_yaxes(title_text="Share Volume", type="linear", tickformat="~s", rangemode="tozero", showgrid=False, zeroline=False, row=2, col=1)
-    fig.update_yaxes(title_text="RVOL (20D)", type="linear", ticksuffix="×", rangemode="tozero", showgrid=True, gridcolor=palette["grid"], row=3, col=1)
+    fig.update_yaxes(
+        title_text="RVOL (20D)", type="linear", ticksuffix="×",
+        range=[0, _rvol_axis_upper(prices["relative_volume_20"])],
+        showgrid=True, gridcolor=palette["grid"], row=3, col=1,
+    )
     fig.update_yaxes(title_text=f"20D Avg Value ({currency})", type="linear", tickformat="~s", tickprefix=prefix, ticksuffix=suffix, rangemode="tozero", showgrid=True, gridcolor=palette["grid"], row=4, col=1)
     fig.update_xaxes(
         showgrid=True, gridcolor=palette["grid"], rangeslider={"visible": False},

@@ -26,6 +26,8 @@ def test_workspace_switching_reuses_completed_analysis(monkeypatch, synthetic_re
     assert not app.exception
     assert calls == ["UITEST"]
     assert not app.get("status")
+    next(control for control in app.radio if control.label == "PRICE VIEW").set_value("Overlay").run()
+    assert calls == ["UITEST"]
 
     workspace = app.get("button_group")[0]
     workspace.set_value("Volume & Liquidity").run()
@@ -35,6 +37,10 @@ def test_workspace_switching_reuses_completed_analysis(monkeypatch, synthetic_re
     app.get("button_group")[0].set_value("Dividends & Total Return").run()
     assert calls == ["UITEST"]
     assert [heading.value for heading in app.subheader] == ["Dividends & Total Return"]
+    next(
+        control for control in app.get("button_group") if control.label == "Dividend horizon"
+    ).set_value("10Y").run()
+    assert calls == ["UITEST"]
 
 
 def test_no_dividend_workspace_is_graceful(synthetic_result):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -11,6 +13,34 @@ from ..config import THEMES
 from ..formatting import currency_parts
 from ..models import AnalysisResult
 from .common import display_result
+
+
+DIVIDEND_HORIZONS = {"1Y": 1, "5Y": 5, "10Y": 10, "MAX": None}
+
+
+def dividend_display_result(
+    result: AnalysisResult,
+    horizon: str = "MAX",
+    *,
+    max_points: int = 5000,
+) -> AnalysisResult:
+    """Return a display-only horizon slice while preserving structural metrics."""
+    selected = str(horizon).upper()
+    if selected not in DIVIDEND_HORIZONS:
+        raise ValueError("horizon must be 1Y, 5Y, 10Y, or MAX")
+    if selected == "MAX" or result.prices.empty:
+        return display_result(result, max_points=max_points)
+    latest = pd.Timestamp(result.prices.index.max())
+    start = latest - pd.DateOffset(years=DIVIDEND_HORIZONS[selected])
+    filtered = copy.copy(result)
+    filtered.prices = result.prices.loc[result.prices.index >= start].copy()
+    if not result.annual_dividends.empty:
+        years = pd.to_numeric(result.annual_dividends["year"], errors="coerce")
+        filtered.annual_dividends = result.annual_dividends.loc[years >= start.year].copy()
+    if not result.dividend_events.empty:
+        event_dates = pd.to_datetime(result.dividend_events["date"], errors="coerce")
+        filtered.dividend_events = result.dividend_events.loc[event_dates >= start].copy()
+    return display_result(filtered, max_points=max_points)
 
 def _empty_dividend_figure(result: AnalysisResult, theme: str) -> go.Figure:
     palette = THEMES[theme]
@@ -66,30 +96,32 @@ def build_dividend_total_return_figure(
 
     completed = annual[annual["completed_year"].fillna(False)]
     ytd = annual[annual["ytd"].fillna(False)]
+    completed_dates = pd.to_datetime(completed["year"].astype(int).astype(str) + "-12-31")
     fig.add_trace(
         go.Bar(
-            x=completed["year_label"], y=completed["annual_dividend"],
+            x=completed_dates, y=completed["annual_dividend"],
             name="Annual DPS", marker={"color": palette["dividend"], "opacity": 0.82},
-            customdata=completed[["payment_count"]].to_numpy(),
+            customdata=completed[["year_label", "payment_count"]].to_numpy(),
             hovertemplate=(
-                "<b>%{x}</b>"
+                "<b>%{customdata[0]}</b>"
                 f"<br>Provider dividend: {prefix}%{{y:,.4f}}{suffix}"
-                "<br>Dividend events: %{customdata[0]}"
+                "<br>Dividend events: %{customdata[1]}"
                 "<br>Basis: current-share-equivalent<extra></extra>"
             ),
         ),
         row=1, col=1, secondary_y=False,
     )
     if len(ytd):
+        ytd_dates = pd.to_datetime(ytd["year"].astype(int).astype(str) + "-12-31")
         fig.add_trace(
             go.Bar(
-                x=ytd["year_label"], y=ytd["annual_dividend"], name="Current YTD",
+                x=ytd_dates, y=ytd["annual_dividend"], name="Current YTD",
                 marker={"color": palette["dividend"], "opacity": 0.35},
-                customdata=ytd[["payment_count"]].to_numpy(),
+                customdata=ytd[["year_label", "payment_count"]].to_numpy(),
                 hovertemplate=(
-                    "<b>%{x}</b>"
+                    "<b>%{customdata[0]}</b>"
                     f"<br>Provider dividend YTD: {prefix}%{{y:,.4f}}{suffix}"
-                    "<br>Dividend events: %{customdata[0]}"
+                    "<br>Dividend events: %{customdata[1]}"
                     "<br>Incomplete year — excluded from structural growth metrics<extra></extra>"
                 ),
             ),
@@ -97,13 +129,15 @@ def build_dividend_total_return_figure(
         )
     exact_growth = pd.to_numeric(annual["yoy_growth"], errors="coerce")
     plotted_growth = exact_growth.clip(lower=-1.0, upper=2.0)
+    annual_dates = pd.to_datetime(annual["year"].astype(int).astype(str) + "-12-31")
     fig.add_trace(
         go.Scatter(
-            x=annual["year_label"], y=plotted_growth, name="YoY Growth",
+            x=annual_dates, y=plotted_growth, name="YoY Growth",
             mode="lines+markers", line={"color": palette["adjusted"], "width": 1.6},
-            marker={"size": 5}, customdata=exact_growth.to_numpy(),
+            marker={"size": 5},
+            customdata=np.column_stack([annual["year_label"].to_numpy(), exact_growth.to_numpy()]),
             hovertemplate=(
-                "<b>%{x}</b><br>Exact completed-year growth: %{customdata:+.2%}"
+                "<b>%{customdata[0]}</b><br>Exact completed-year growth: %{customdata[1]:+.2%}"
                 "<br>Display axis is clipped to −100% / +200%<extra></extra>"
             ),
         ),
@@ -186,17 +220,21 @@ def build_dividend_total_return_figure(
             font={"size": 11, "color": palette["muted"]},
         )
 
-    first_year = int(events["calendar_year"].min())
+    first_year = int(prices.index[0].year)
     last_year = int(prices.index[-1].year)
     heat_years = list(range(first_year, last_year + 1))
-    heat_values = events.pivot_table(
-        index="calendar_year", columns="calendar_month", values="provider_dividend",
-        aggfunc="sum", fill_value=0.0,
-    ).reindex(index=heat_years, columns=range(1, 13), fill_value=0.0)
-    heat_counts = events.assign(event_count=1).pivot_table(
-        index="calendar_year", columns="calendar_month", values="event_count",
-        aggfunc="sum", fill_value=0,
-    ).reindex(index=heat_years, columns=range(1, 13), fill_value=0)
+    if events.empty:
+        heat_values = pd.DataFrame(0.0, index=heat_years, columns=range(1, 13))
+        heat_counts = pd.DataFrame(0, index=heat_years, columns=range(1, 13))
+    else:
+        heat_values = events.pivot_table(
+            index="calendar_year", columns="calendar_month", values="provider_dividend",
+            aggfunc="sum", fill_value=0.0,
+        ).reindex(index=heat_years, columns=range(1, 13), fill_value=0.0)
+        heat_counts = events.assign(event_count=1).pivot_table(
+            index="calendar_year", columns="calendar_month", values="event_count",
+            aggfunc="sum", fill_value=0,
+        ).reindex(index=heat_years, columns=range(1, 13), fill_value=0)
     month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     custom_heat = np.dstack([
         np.repeat(np.asarray(heat_years)[:, None], 12, axis=1),
@@ -242,20 +280,10 @@ def build_dividend_total_return_figure(
     fig.update_yaxes(title_text=f"TTM Dividend ({currency})", tickprefix=prefix, ticksuffix=suffix, rangemode="tozero", row=2, col=1, secondary_y=False)
     fig.update_yaxes(title_text="TTM Yield", tickformat=".1%", rangemode="tozero", row=2, col=1, secondary_y=True)
     fig.update_yaxes(title_text=f"Value ({currency})", type="log", row=3, col=1)
+    fig.update_xaxes(tickformat="%Y", dtick="M12", row=1, col=1)
     fig.update_xaxes(matches="x3", showgrid=True, gridcolor=palette["grid"], row=2, col=1)
     fig.update_xaxes(
         title_text="Date", showgrid=True, gridcolor=palette["grid"],
-        rangeselector={
-            "buttons": [
-                {"count": 1, "label": "1Y", "step": "year", "stepmode": "backward"},
-                {"count": 5, "label": "5Y", "step": "year", "stepmode": "backward"},
-                {"count": 10, "label": "10Y", "step": "year", "stepmode": "backward"},
-                {"step": "all", "label": "MAX"},
-            ],
-            "x": 0, "y": 1.16, "bgcolor": palette["control_bg"],
-            "activecolor": palette["control_active"], "bordercolor": palette["control_border"],
-            "borderwidth": 1, "font": {"size": 10, "color": palette["control_text"]},
-        },
         row=3, col=1,
     )
     fig.update_xaxes(title_text="Month", row=4, col=1)
@@ -284,11 +312,17 @@ def dividend_summary_display(result: AnalysisResult) -> pd.DataFrame:
     })[["Year", "Dividend Per Share", "Payment Count", "YoY Dividend Growth", "Completed Year?", "YTD?"]]
 
 
-def build_dividend_chart(result: AnalysisResult, *, theme: str = "dark", wealth_scale: str = "log") -> go.Figure:
+def build_dividend_chart(
+    result: AnalysisResult,
+    *,
+    theme: str = "dark",
+    wealth_scale: str = "log",
+    horizon: str = "MAX",
+) -> go.Figure:
     """Build the dividend workspace while keeping page content in Streamlit."""
     if wealth_scale not in {"log", "linear"}:
         raise ValueError("wealth_scale must be log or linear")
-    rendered = display_result(result, max_points=5000)
+    rendered = dividend_display_result(result, horizon=horizon, max_points=5000)
     fig = build_dividend_total_return_figure(rendered, theme=theme)
     if result.dividend_status != "NONE":
         fig.update_yaxes(type=wealth_scale, row=3, col=1)

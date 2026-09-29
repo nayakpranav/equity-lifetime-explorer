@@ -68,6 +68,17 @@ def test_app_uses_transient_progress_native_theme_and_lazy_workspace_flow():
     assert '@st.dialog("Download Center", width="large")' in source
     assert "st.multiselect(" not in source
     assert "st.form(" in source and "st.checkbox(" in source
+    assert 'st.selectbox("Price view"' not in source
+    assert '"PRICE VIEW"' in source
+    for label, mode in (
+        ("No-Split Equivalent", "no_split"),
+        ("Raw As-Traded", "raw"),
+        ("Provider Adjusted", "adjusted"),
+        ("Overlay", "overlay"),
+    ):
+        assert f'"{label}": "{mode}"' in source
+    assert "Dividend horizon" in source
+    assert "logging.getLogger" in source and "Export generation failed." in source
     assert 'with st.expander("Downloads"' not in source
     assert "No cash-dividend history found" in source
 
