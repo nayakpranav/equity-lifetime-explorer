@@ -73,6 +73,28 @@ def test_dividend_legend_band_and_compact_labels(synthetic_result):
     } <= titles
 
 
+def test_dividend_annual_bar_dates_use_year_end_and_latest_observation(synthetic_result):
+    result = copy.deepcopy(synthetic_result)
+    latest_observation = pd.Timestamp("2025-10-17")
+    result.prices = result.prices.loc[result.prices.index <= latest_observation].copy()
+
+    current_year = int(result.annual_dividends["year"].max())
+    current_mask = result.annual_dividends["year"].eq(current_year)
+    result.annual_dividends.loc[current_mask, "completed_year"] = False
+    result.annual_dividends.loc[current_mask, "ytd"] = True
+    result.annual_dividends.loc[current_mask, "year_label"] = f"{current_year} YTD"
+
+    figure = build_dividend_chart(result, theme="dark")
+    traces = {trace.name: trace for trace in figure.data if trace.name}
+    completed_dates = pd.DatetimeIndex(pd.to_datetime(traces["Annual DPS"].x))
+    ytd_dates = pd.DatetimeIndex(pd.to_datetime(traces["Current YTD"].x))
+
+    assert all((date.month, date.day) == (12, 31) for date in completed_dates)
+    assert list(ytd_dates) == [result.prices.index.max()]
+    assert ytd_dates[0] != pd.Timestamp(f"{current_year}-12-31")
+    assert figure.layout.xaxis.tickformat == "%Y"
+
+
 def test_dividend_horizon_filters_all_visual_sections(synthetic_result):
     result = _long_dividend_result(synthetic_result)
     full = dividend_display_result(result, "MAX")

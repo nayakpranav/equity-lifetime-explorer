@@ -112,7 +112,8 @@ def build_dividend_total_return_figure(
         row=1, col=1, secondary_y=False,
     )
     if len(ytd):
-        ytd_dates = pd.to_datetime(ytd["year"].astype(int).astype(str) + "-12-31")
+        latest_observation = pd.Timestamp(prices.index.max())
+        ytd_dates = pd.DatetimeIndex([latest_observation] * len(ytd))
         fig.add_trace(
             go.Bar(
                 x=ytd_dates, y=ytd["annual_dividend"], name="Current YTD",
