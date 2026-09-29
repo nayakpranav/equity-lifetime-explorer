@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from ..config import THEMES
-from ..formatting import currency_parts, format_money, format_percent
+from ..formatting import currency_parts
 from ..models import AnalysisResult
 from .common import display_result
 
@@ -27,12 +27,6 @@ def _empty_dividend_figure(result: AnalysisResult, theme: str) -> go.Figure:
         font={"size": 16, "color": palette["muted"]},
     )
     return fig
-
-
-def _dividend_card_value(value: Any, formatter: Any) -> str:
-    if value is None or pd.isna(value):
-        return "N/A"
-    return formatter(value)
 
 
 def build_dividend_total_return_figure(
@@ -54,8 +48,8 @@ def build_dividend_total_return_figure(
     prefix, suffix = currency_parts(currency)
 
     fig = make_subplots(
-        rows=4, cols=1, vertical_spacing=0.075,
-        row_heights=[0.30, 0.22, 0.25, 0.23],
+        rows=4, cols=1, vertical_spacing=0.09,
+        row_heights=[0.28, 0.22, 0.27, 0.23],
         specs=[
             [{"secondary_y": True}],
             [{"secondary_y": True}],
@@ -63,10 +57,10 @@ def build_dividend_total_return_figure(
             [{"type": "heatmap"}],
         ],
         subplot_titles=(
-            "Annual Provider-Reported Dividends & Completed-Year Growth",
-            "Trailing-12-Month Dividend & Split-Consistent Historical Yield",
-            "10,000 Invested — Price Only vs Provider-Adjusted Total-Return Proxy",
-            "Dividend Calendar — Provider Dividend per Current-Share-Equivalent Basis",
+            "Annual Dividends & Growth",
+            "TTM Dividend & Historical Yield",
+            "10,000 Price vs Total Return",
+            "Dividend Calendar Heatmap",
         ),
     )
 
@@ -75,7 +69,7 @@ def build_dividend_total_return_figure(
     fig.add_trace(
         go.Bar(
             x=completed["year_label"], y=completed["annual_dividend"],
-            name="Completed-Year Dividend", marker={"color": palette["dividend"], "opacity": 0.82},
+            name="Annual DPS", marker={"color": palette["dividend"], "opacity": 0.82},
             customdata=completed[["payment_count"]].to_numpy(),
             hovertemplate=(
                 "<b>%{x}</b>"
@@ -89,7 +83,7 @@ def build_dividend_total_return_figure(
     if len(ytd):
         fig.add_trace(
             go.Bar(
-                x=ytd["year_label"], y=ytd["annual_dividend"], name="Current Year YTD",
+                x=ytd["year_label"], y=ytd["annual_dividend"], name="Current YTD",
                 marker={"color": palette["dividend"], "opacity": 0.35},
                 customdata=ytd[["payment_count"]].to_numpy(),
                 hovertemplate=(
@@ -105,7 +99,7 @@ def build_dividend_total_return_figure(
     plotted_growth = exact_growth.clip(lower=-1.0, upper=2.0)
     fig.add_trace(
         go.Scatter(
-            x=annual["year_label"], y=plotted_growth, name="Completed-Year YoY Growth",
+            x=annual["year_label"], y=plotted_growth, name="YoY Growth",
             mode="lines+markers", line={"color": palette["adjusted"], "width": 1.6},
             marker={"size": 5}, customdata=exact_growth.to_numpy(),
             hovertemplate=(
@@ -122,7 +116,7 @@ def build_dividend_total_return_figure(
     ])
     fig.add_trace(
         go.Scattergl(
-            x=prices.index, y=prices["ttm_dividend"], name="TTM Dividend per Share",
+            x=prices.index, y=prices["ttm_dividend"], name="TTM DPS",
             mode="lines", line={"color": palette["dividend"], "width": 1.9},
             customdata=dividend_custom,
             hovertemplate=(
@@ -137,7 +131,7 @@ def build_dividend_total_return_figure(
     )
     fig.add_trace(
         go.Scattergl(
-            x=prices.index, y=prices["ttm_dividend_yield"], name="Historical TTM Yield",
+            x=prices.index, y=prices["ttm_dividend_yield"], name="TTM Yield",
             mode="lines", line={"color": palette["event"], "width": 1.5},
             customdata=dividend_custom,
             hovertemplate=(
@@ -173,7 +167,7 @@ def build_dividend_total_return_figure(
         fig.add_trace(
             go.Scattergl(
                 x=prices.index, y=prices["provider_total_return_wealth_10000"],
-                name="Provider-Adjusted Total Return", mode="lines",
+                name="Total Return", mode="lines",
                 line={"color": palette["adjusted"], "width": 2.0}, customdata=wealth_custom,
                 hovertemplate=(
                     "<b>%{x|%d %b %Y}</b>"
@@ -228,65 +222,20 @@ def build_dividend_total_return_figure(
         row=4, col=1,
     )
 
-    first_dividend = metrics.get("first_dividend_date")
-    title = (
-        f"<b>{result.metadata.name.upper()} — DIVIDEND & TOTAL RETURN EXPLORER</b>"
-        f"<br><span style='font-size:13px;color:{palette['muted']}'>Dividend history · growth · yield · total-return compounding</span>"
-        f"<br><span style='font-size:11px;color:{palette['muted']}'>{result.metadata.exchange}: "
-        f"{result.metadata.ticker} | {currency} | dividend history since {first_dividend:%Y} | status {result.dividend_status}</span>"
-    )
-    scale_buttons = [
-        {"label": "LOG", "method": "relayout", "args": [{"yaxis5.type": "log"}]},
-        {"label": "LINEAR", "method": "relayout", "args": [{"yaxis5.type": "linear"}]},
-    ]
     fig.update_layout(
         template="plotly_dark" if theme == "dark" else "plotly_white",
-        title={"text": title, "x": 0.01, "xanchor": "left", "y": 0.995, "yanchor": "top"},
-        height=1280, paper_bgcolor=palette["paper"], plot_bgcolor=palette["plot"],
+        title=None,
+        height=1320, paper_bgcolor=palette["paper"], plot_bgcolor=palette["plot"],
         font={"family": "Inter, Arial, sans-serif", "color": palette["text"], "size": 12},
         hovermode="closest", hoverlabel={"bgcolor": palette["paper"], "font": {"color": palette["text"]}},
-        margin={"l": 90, "r": 70, "t": 235, "b": 185}, bargap=0.18,
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.005, "xanchor": "right", "x": 1, "bgcolor": "rgba(0,0,0,0)"},
-        updatemenus=[{
-            "type": "buttons", "direction": "right", "buttons": scale_buttons,
-            "x": 0.0, "y": 1.115, "xanchor": "left", "yanchor": "top",
-            "showactive": False, "active": 0,
-            "bgcolor": palette["control_bg"], "bordercolor": palette["control_border"],
-            "borderwidth": 1, "font": {"size": 10, "color": palette["control_text"]},
-        }],
-    )
-    cards = [
-        ("TTM DIVIDEND", _dividend_card_value(metrics.get("ttm_dividend"), lambda value: format_money(value, currency))),
-        ("TTM YIELD", _dividend_card_value(metrics.get("current_ttm_dividend_yield"), lambda value: format_percent(value, 2))),
-        ("LATEST DIVIDEND", _dividend_card_value(metrics.get("latest_dividend_amount"), lambda value: format_money(value, currency))),
-        ("3Y DIV CAGR", _dividend_card_value(metrics.get("dividend_cagr_3y"), lambda value: format_percent(value, 1))),
-        ("5Y DIV CAGR", _dividend_card_value(metrics.get("dividend_cagr_5y"), lambda value: format_percent(value, 1))),
-        ("PAYING STREAK", f"{metrics.get('dividend_paying_streak', 0)} years" if metrics.get("dividend_paying_streak") else "N/A"),
-    ]
-    for index, (label, value) in enumerate(cards):
-        fig.add_annotation(
-            x=index / (len(cards) - 1), y=1.075, xref="paper", yref="paper",
-            xanchor="left" if index == 0 else ("right" if index == len(cards) - 1 else "center"),
-            yanchor="top", showarrow=False, align="left",
-            text=f"<span style='font-size:8px;color:{palette['muted']}'>{label}</span><br><b>{value}</b>",
-            bgcolor=palette["card"], bordercolor=palette["grid"], borderpad=5,
-        )
-    fig.add_annotation(
-        x=0, y=-0.13, xref="paper", yref="paper", xanchor="left", showarrow=False, align="left",
-        font={"size": 10, "color": palette["muted"]},
-        text=(
-            "<b>Methodology:</b> Provider-reported historical dividends may be retrospectively adjusted for stock splits. "
-            "Growth uses a consistent provider/current-share-equivalent basis; historical yield uses a split-consistent price denominator. "
-            "Adjusted Close, where genuinely supplied, is a pre-tax, pre-fee total-return proxy."
-        ),
-    )
-    fig.add_annotation(
-        x=0, y=-0.19, xref="paper", yref="paper", xanchor="left", showarrow=False, align="left",
-        font={"size": 10, "color": palette["muted"]},
-        text=(
-            "Provider dividend dates are treated as provider effective/ex-dividend dates unless payment-date information is explicitly available. "
-            "Annual totals can include unusual or special distributions that the provider does not separately classify. No taxes, fees, or withholding are modeled."
-        ),
+        margin={"l": 90, "r": 70, "t": 140, "b": 95}, bargap=0.18,
+        legend={
+            "orientation": "h", "yanchor": "bottom", "y": 1.075,
+            "xanchor": "left", "x": 0, "bgcolor": palette["card"],
+            "bordercolor": palette["grid"], "borderwidth": 1,
+            "font": {"size": 10, "color": palette["text"]},
+            "entrywidth": 102, "entrywidthmode": "pixels",
+        },
     )
     fig.update_yaxes(title_text=f"Annual Dividend ({currency})", tickprefix=prefix, ticksuffix=suffix, rangemode="tozero", row=1, col=1, secondary_y=False)
     fig.update_yaxes(title_text="YoY Growth", tickformat=".0%", range=[-1.05, 2.05], row=1, col=1, secondary_y=True)
@@ -303,7 +252,7 @@ def build_dividend_total_return_figure(
                 {"count": 10, "label": "10Y", "step": "year", "stepmode": "backward"},
                 {"step": "all", "label": "MAX"},
             ],
-            "x": 0, "y": -0.25, "bgcolor": palette["control_bg"],
+            "x": 0, "y": 1.16, "bgcolor": palette["control_bg"],
             "activecolor": palette["control_active"], "bordercolor": palette["control_border"],
             "borderwidth": 1, "font": {"size": 10, "color": palette["control_text"]},
         },
@@ -311,6 +260,17 @@ def build_dividend_total_return_figure(
     )
     fig.update_xaxes(title_text="Month", row=4, col=1)
     fig.update_yaxes(title_text="Calendar Year", autorange="reversed", row=4, col=1)
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True, title_standoff=10)
+    subplot_titles = {
+        "Annual Dividends & Growth",
+        "TTM Dividend & Historical Yield",
+        "10,000 Price vs Total Return",
+        "Dividend Calendar Heatmap",
+    }
+    for annotation in fig.layout.annotations:
+        if annotation.text in subplot_titles:
+            annotation.update(font={"size": 13, "color": palette["text"]}, yshift=10)
     return fig
 
 
@@ -332,13 +292,6 @@ def build_dividend_chart(result: AnalysisResult, *, theme: str = "dark", wealth_
     fig = build_dividend_total_return_figure(rendered, theme=theme)
     if result.dividend_status != "NONE":
         fig.update_yaxes(type=wealth_scale, row=3, col=1)
-    fig.update_layout(title=None, margin={"l": 82, "r": 62, "t": 62, "b": 72})
+    fig.update_layout(title=None, height=1320, margin={"l": 82, "r": 62, "t": 140, "b": 90})
     fig.layout.updatemenus = ()
-    fig.layout.annotations = tuple(
-        annotation for annotation in fig.layout.annotations
-        if not (
-            getattr(annotation, "xref", None) == "paper"
-            and (float(getattr(annotation, "y", 0) or 0) > 1 or float(getattr(annotation, "y", 0) or 0) < 0)
-        )
-    )
     return fig

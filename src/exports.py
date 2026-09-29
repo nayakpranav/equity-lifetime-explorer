@@ -81,7 +81,10 @@ def _kpi_cards(result: AnalysisResult, report: str) -> list[tuple[str, str]]:
     return [
         ("TTM dividend", format_money(dividend.get("ttm_dividend"), currency)),
         ("TTM yield", format_percent(dividend.get("current_ttm_dividend_yield"), 2)),
+        ("Latest annual dividend growth", format_percent(dividend.get("dividend_growth_1y"))),
+        ("3Y dividend CAGR", format_percent(dividend.get("dividend_cagr_3y"))),
         ("5Y dividend CAGR", format_percent(dividend.get("dividend_cagr_5y"))),
+        ("10Y dividend CAGR", format_percent(dividend.get("dividend_cagr_10y"))),
         ("Paying streak", f"{dividend.get('dividend_paying_streak', 0)} years"),
     ]
 
@@ -118,8 +121,14 @@ def standalone_html(
     )
     metadata = result.metadata
     palette = THEMES[theme]
-    panel = "#111A28" if theme == "dark" else "#F8FAFC"
-    line = "#344257" if theme == "dark" else "#D8E0EA"
+    panel = "#0A1326" if theme == "dark" else "#FFFFFF"
+    line = "#263757" if theme == "dark" else "#C8D5E8"
+    card_background = (
+        "linear-gradient(135deg,rgba(21,35,66,.96),rgba(42,23,61,.86))"
+        if theme == "dark" else
+        "linear-gradient(135deg,rgba(255,255,255,.98),rgba(242,246,255,.96))"
+    )
+    shadow = "0 10px 28px rgba(0,0,0,.24)" if theme == "dark" else "0 10px 26px rgba(39,65,104,.11)"
     document = f"""<!doctype html>
 <html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>{html.escape(title)}</title>
@@ -128,12 +137,13 @@ def standalone_html(
 *{{box-sizing:border-box}}body{{font-family:Inter,Arial,sans-serif;color:var(--ink);margin:0;background:var(--page)}}
 main{{max-width:1500px;margin:auto;padding:30px clamp(16px,4vw,58px)}}
 h1{{margin:0 0 6px;font-size:clamp(25px,4vw,42px)}}h2{{margin-top:34px}}.meta{{color:var(--muted);margin-bottom:22px}}
-.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:20px 0}}
-.card{{border:1px solid var(--line);border-radius:9px;padding:12px;background:var(--panel)}}
+.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:11px;margin:20px 0}}
+.card{{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:17px;padding:14px 15px;background:{card_background};box-shadow:{shadow}}}
+.card:before{{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent)}}
 .card small{{display:block;color:var(--muted);font-size:11px;margin-bottom:6px}}.card strong{{font-size:19px}}
-.chart{{margin-top:18px}}.data-table{{border-collapse:collapse;width:100%;font-size:13px;overflow:auto}}
+.chart{{margin-top:18px;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--panel)}}.data-table{{border-collapse:collapse;width:100%;font-size:13px;overflow:auto}}
 .data-table th,.data-table td{{padding:7px;border-bottom:1px solid var(--line);text-align:right}}.data-table th:first-child,.data-table td:first-child{{text-align:left}}
-.method{{margin-top:30px;padding:16px;border-left:4px solid var(--accent);background:var(--panel);line-height:1.55}}
+.method{{margin-top:30px;padding:16px;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:14px;background:var(--panel);line-height:1.55}}
 footer{{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.5}}
 </style></head><body><main>
 <h1>{html.escape(title)}</h1>

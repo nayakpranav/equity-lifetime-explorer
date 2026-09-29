@@ -12,9 +12,19 @@ from src.charts import build_dividend_chart, build_lifetime_chart, build_volume_
 from src.charts.dividends import dividend_summary_display
 from src.charts.volume import notable_volume_events
 from src.exports import export_bundle, safe_ticker, zip_bytes
-from src.formatting import format_money, format_multiple, format_percent, format_quantity
 from src.providers.yahoo import clean_ticker
 from src.service import run_equity_analysis
+from src.ui import (
+    active_theme_type,
+    company_hero_html,
+    dividend_kpi_cards,
+    dividend_secondary_facts,
+    kpi_grid_html,
+    lifetime_kpi_cards,
+    secondary_facts_html,
+    visual_css,
+    volume_kpi_cards,
+)
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -26,16 +36,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+active_theme = active_theme_type()
 st.markdown(
-    """
-    <style>
-    .block-container {padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1600px;}
-    [data-testid="stMetric"] {border: 1px solid rgba(120,135,155,.28); border-radius: .55rem; padding: .7rem .85rem;}
-    [data-testid="stSidebar"] h1 {font-size: 1.18rem; letter-spacing: .03em;}
-    .ele-kicker {letter-spacing:.09em;text-transform:uppercase;font-size:.78rem;color:#718096;font-weight:700}
-    .ele-subtle {color:#718096;font-size:.92rem}
-    </style>
-    """,
+    f"<style>{visual_css(active_theme)}</style>",
     unsafe_allow_html=True,
 )
 
@@ -54,41 +57,9 @@ def analyze(ticker: str, force_refresh: bool):
     return cached_analysis(symbol)
 
 
-def metric(value, fallback: str = "N/A") -> str:
-    return fallback if value is None or pd.isna(value) else str(value)
-
-
 def render_company_header(result) -> None:
-    metadata = result.metadata
-    details = [metadata.ticker, metadata.exchange, metadata.currency]
-    if metadata.sector:
-        details.append(metadata.sector)
-    st.markdown('<div class="ele-kicker">Equity Lifetime Explorer</div>', unsafe_allow_html=True)
-    st.title(metadata.name)
-    st.markdown(" · ".join(details))
-    values = result.metrics
-    columns = st.columns(6)
-    cards = [
-        ("Latest price", format_money(values.get("latest_raw_close"), metadata.currency)),
-        ("No-split equivalent", format_money(values.get("latest_no_split_equivalent"), metadata.currency, compact=True)),
-        ("Lifetime multiple", format_multiple(values.get("lifetime_price_multiple"))),
-        ("Lifetime CAGR", format_percent(values.get("lifetime_cagr"))),
-        ("Share multiplier", format_multiple(values.get("cumulative_share_multiplier"))),
-        ("Max drawdown", format_percent(values.get("maximum_drawdown"))),
-    ]
-    for column, (label, value) in zip(columns, cards):
-        column.metric(label, value)
-    if result.dividend_status != "NONE":
-        dividend = result.dividend_metrics
-        columns = st.columns(4)
-        dividend_cards = [
-            ("TTM dividend", format_money(dividend.get("ttm_dividend"), metadata.currency)),
-            ("TTM yield", format_percent(dividend.get("current_ttm_dividend_yield"), 2)),
-            ("5Y dividend CAGR", format_percent(dividend.get("dividend_cagr_5y"))),
-            ("Dividend-paying streak", f"{dividend.get('dividend_paying_streak', 0)} years"),
-        ]
-        for column, (label, value) in zip(columns, dividend_cards):
-            column.metric(label, value)
+    st.markdown(company_hero_html(result), unsafe_allow_html=True)
+    st.markdown(kpi_grid_html(lifetime_kpi_cards(result)), unsafe_allow_html=True)
 
 
 def render_price_workspace(result, controls: dict) -> None:
@@ -125,16 +96,7 @@ def render_volume_workspace(result, theme: str) -> None:
         key="volume_mode",
     )
     mode = "dollar" if mode_label == "Dollar Volume" else "shares"
-    metrics = result.metrics
-    columns = st.columns(4)
-    cards = [
-        ("Latest volume", format_quantity(metrics.get("latest_volume"))),
-        ("Previous 20D average", format_quantity(metrics.get("volume_ma_20"))),
-        ("Latest RVOL", format_multiple(metrics.get("latest_relative_volume_20"))),
-        ("Latest dollar volume", format_money(metrics.get("latest_dollar_volume"), result.metadata.currency, compact=True)),
-    ]
-    for column, (label, value) in zip(columns, cards):
-        column.metric(label, value)
+    st.markdown(kpi_grid_html(volume_kpi_cards(result)), unsafe_allow_html=True)
     figure = build_volume_chart(result, theme=theme, mode=mode)
     st.plotly_chart(figure, width="stretch", theme=None, config={"displaylogo": False, "responsive": True})
     st.markdown("#### Notable Volume Events")
@@ -161,18 +123,11 @@ def render_dividend_workspace(result, theme: str) -> None:
     scale_label = st.segmented_control(
         "Wealth-chart scale", ["Log", "Linear"], default="Log", key="dividend_scale"
     )
-    dividend = result.dividend_metrics
-    columns = st.columns(6)
-    cards = [
-        ("TTM dividend", format_money(dividend.get("ttm_dividend"), result.metadata.currency)),
-        ("TTM yield", format_percent(dividend.get("current_ttm_dividend_yield"), 2)),
-        ("3Y CAGR", format_percent(dividend.get("dividend_cagr_3y"))),
-        ("5Y CAGR", format_percent(dividend.get("dividend_cagr_5y"))),
-        ("10Y CAGR", format_percent(dividend.get("dividend_cagr_10y"))),
-        ("Paying streak", f"{dividend.get('dividend_paying_streak', 0)} years"),
-    ]
-    for column, (label, value) in zip(columns, cards):
-        column.metric(label, value)
+    st.markdown(kpi_grid_html(dividend_kpi_cards(result)), unsafe_allow_html=True)
+    st.markdown(
+        secondary_facts_html(dividend_secondary_facts(result)),
+        unsafe_allow_html=True,
+    )
     figure = build_dividend_chart(result, theme=theme, wealth_scale=scale_label.lower())
     st.plotly_chart(figure, width="stretch", theme=None, config={"displaylogo": False, "responsive": True})
     st.markdown("#### Annual Dividend Summary")
@@ -227,8 +182,18 @@ EXPORT_LABELS = {
 }
 
 
-def render_downloads(result, controls: dict) -> None:
-    with st.expander("Downloads", expanded=False):
+def render_downloads_popover(result, controls: dict) -> None:
+    drawer = st.popover(
+        "Downloads",
+        icon=":material/download:",
+        type="secondary",
+        width="stretch",
+        key="downloads_popover",
+        on_change="rerun",
+    )
+    with drawer:
+        if not drawer.open:
+            return
         st.caption("Exports are generated in memory only when requested. CDN-backed HTML is smaller; portable HTML embeds Plotly JavaScript.")
         available = ["lifetime_html", "volume_html", "history_csv", "actions_csv", "validation_csv"]
         if result.dividend_status != "NONE":
@@ -283,7 +248,6 @@ with st.sidebar:
     st.caption("Price History · Corporate Actions · Liquidity · Dividends")
     ticker = st.text_input("Ticker", value="KO", max_chars=25, placeholder="NVDA, SAP.DE, RELIANCE.NS")
     st.caption("Examples: NVDA · AAPL · MSFT · GOOG · AMZN · SAP.DE · ASML · RELIANCE.NS")
-    theme_label = st.radio("Theme", ["Dark", "Light"], horizontal=True)
     price_label = st.selectbox("Price view", ["No-Split Equivalent", "Raw As-Traded", "Provider Adjusted", "Overlay"])
     scale_label = st.radio("Price scale", ["Log", "Linear"], horizontal=True)
     st.markdown("**Chart components**")
@@ -293,13 +257,14 @@ with st.sidebar:
     show_drawdown = st.checkbox("Drawdown", value=True)
     force_refresh = st.checkbox("Force fresh retrieval", value=False)
     analyze_clicked = st.button("ANALYZE", type="primary", width="stretch")
+    st.caption("Appearance can be changed from Streamlit Settings.")
 
 price_modes = {
     "No-Split Equivalent": "no_split", "Raw As-Traded": "raw",
     "Provider Adjusted": "adjusted", "Overlay": "overlay",
 }
 controls = {
-    "theme": theme_label.lower(), "price_mode": price_modes[price_label],
+    "theme": active_theme, "price_mode": price_modes[price_label],
     "price_scale": scale_label.lower(), "show_splits": show_splits,
     "show_dividends": show_dividends, "show_volume": show_volume,
     "show_drawdown": show_drawdown,
@@ -310,14 +275,12 @@ if "analysis_result" not in st.session_state:
 if analyze_clicked:
     try:
         clean_ticker(ticker)
-        with st.status("Analyzing lifetime history…", expanded=True) as status:
-            st.write("Retrieving maximum available market history…")
+        with st.spinner("Retrieving and analyzing maximum available market history…", show_time=True):
             result = analyze(ticker, force_refresh)
-            st.write("Corporate actions, reconstruction, analytics and validation complete.")
             st.session_state.analysis_result = result
             st.session_state.prepared_exports = {}
             st.session_state.prepared_export_ticker = None
-            status.update(label=f"{result.metadata.name} analysis complete", state="complete", expanded=False)
+        st.toast(f"{result.metadata.ticker} analysis complete", icon="✅")
     except ValueError as exc:
         st.error(f"Invalid ticker: {exc}")
     except LookupError:
@@ -335,22 +298,27 @@ if result is None:
     st.stop()
 
 render_company_header(result)
-workspace = st.segmented_control(
-    "Analytical workspace",
-    ["Price & Ownership", "Volume & Liquidity", "Dividends & Total Return"],
-    default="Price & Ownership",
-    key="workspace",
-    width="stretch",
-)
-if workspace == "Price & Ownership":
-    render_price_workspace(result, controls)
-elif workspace == "Volume & Liquidity":
-    render_volume_workspace(result, controls["theme"])
-else:
-    render_dividend_workspace(result, controls["theme"])
+navigation, downloads = st.columns([5.4, 1], vertical_alignment="bottom")
+with navigation:
+    workspace = st.segmented_control(
+        "Analytical workspace",
+        ["Price & Ownership", "Volume & Liquidity", "Dividends & Total Return"],
+        default="Price & Ownership",
+        key="workspace",
+        width="stretch",
+    )
+with downloads:
+    render_downloads_popover(result, controls)
+
+with st.container(border=True):
+    if workspace == "Price & Ownership":
+        render_price_workspace(result, controls)
+    elif workspace == "Volume & Liquidity":
+        render_volume_workspace(result, controls["theme"])
+    else:
+        render_dividend_workspace(result, controls["theme"])
 
 render_audit_sections(result)
-render_downloads(result, controls)
 st.caption(
     "For informational and research purposes only. Market data may be delayed, incomplete, or retrospectively adjusted by the provider."
 )
