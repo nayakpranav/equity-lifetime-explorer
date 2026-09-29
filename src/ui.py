@@ -119,10 +119,21 @@ def dividend_kpi_cards(result: AnalysisResult) -> list[KpiCard]:
 def dividend_secondary_facts(result: AnalysisResult) -> list[tuple[str, str]]:
     values = result.dividend_metrics
     frequency = values.get("inferred_payment_frequency") or "N/A"
+    current_year = int(result.prices.index[-1].year) if len(result.prices) else "Current year"
+    currency = result.metadata.currency
     return [
         ("Increase streak", _years(values.get("dividend_increase_streak"))),
         ("No-cut streak", _years(values.get("dividend_no_cut_streak"))),
         ("Payment frequency", str(frequency)),
+        (
+            f"{current_year} YTD dividend",
+            format_money(values.get("current_year_ytd_dividend"), currency),
+        ),
+        (
+            "Prior-year same period",
+            format_money(values.get("prior_year_same_period_dividend"), currency),
+        ),
+        ("YTD dividend growth", format_percent(values.get("ytd_dividend_growth"))),
     ]
 
 

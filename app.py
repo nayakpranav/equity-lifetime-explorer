@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
 
 import pandas as pd
 import streamlit as st
@@ -11,7 +10,14 @@ import streamlit as st
 from src.charts import build_dividend_chart, build_lifetime_chart, build_volume_chart
 from src.charts.dividends import dividend_summary_display
 from src.charts.volume import notable_volume_events
-from src.exports import export_bundle, safe_ticker, zip_bytes
+from src.downloads import (
+    DATA_EXPORTS,
+    REPORT_EXPORTS,
+    default_export_selection,
+    export_is_available,
+    prepare_complete_package,
+    prepare_selected_download,
+)
 from src.providers.yahoo import clean_ticker
 from src.service import run_equity_analysis
 from src.ui import (
@@ -171,76 +177,107 @@ def render_audit_sections(result) -> None:
                 st.markdown(f"- {note}")
 
 
-EXPORT_LABELS = {
-    "lifetime_html": "Lifetime Explorer HTML",
-    "volume_html": "Volume & Liquidity HTML",
-    "dividend_html": "Dividend & Total Return HTML",
-    "history_csv": "Historical Data CSV",
-    "actions_csv": "Corporate Actions CSV",
-    "dividend_csv": "Dividend Annual Summary CSV",
-    "validation_csv": "Validation CSV",
-}
+def _price_export_options(controls: dict) -> dict:
+    return {
+        "price_mode": controls["price_mode"],
+        "default_scale": controls["price_scale"],
+        "show_splits": controls["show_splits"],
+        "show_dividends": controls["show_dividends"],
+        "show_volume": controls["show_volume"],
+        "show_drawdown": controls["show_drawdown"],
+    }
 
 
-def render_downloads_popover(result, controls: dict) -> None:
-    drawer = st.popover(
-        "Downloads",
-        icon=":material/download:",
-        type="secondary",
-        width="stretch",
-        key="downloads_popover",
-        on_change="rerun",
-    )
-    with drawer:
-        if not drawer.open:
-            return
-        st.caption("Exports are generated in memory only when requested. CDN-backed HTML is smaller; portable HTML embeds Plotly JavaScript.")
-        available = ["lifetime_html", "volume_html", "history_csv", "actions_csv", "validation_csv"]
-        if result.dividend_status != "NONE":
-            available.extend(["dividend_html", "dividend_csv"])
-        selected = st.multiselect(
-            "Select reports and data",
-            available,
-            default=["lifetime_html", "history_csv"],
-            format_func=lambda key: EXPORT_LABELS[key],
+@st.dialog("Download Center", width="large")
+def render_download_center(result, controls: dict) -> None:
+    st.caption("Choose focused reports or research data. Nothing is generated until you request it.")
+    defaults = default_export_selection(result)
+    with st.form("download_selection_form", border=False):
+        report_column, data_column = st.columns(2)
+        choices: dict[str, bool] = {}
+        with report_column:
+            st.markdown("#### Reports")
+            for key, label in REPORT_EXPORTS:
+                available = export_is_available(result, key)
+                choices[key] = st.checkbox(
+                    label,
+                    value=defaults[key],
+                    disabled=not available,
+                    key=f"export_choice_{key}",
+                    help=None if available else "Unavailable because this security has no provider-reported cash-dividend history.",
+                )
+        with data_column:
+            st.markdown("#### Data")
+            for key, label in DATA_EXPORTS:
+                available = export_is_available(result, key)
+                choices[key] = st.checkbox(
+                    label,
+                    value=defaults[key],
+                    disabled=not available,
+                    key=f"export_choice_{key}",
+                    help=None if available else "Unavailable because this security has no provider-reported cash-dividend history.",
+                )
+        st.markdown("#### Options")
+        portable = st.checkbox(
+            "Portable self-contained HTML",
+            value=False,
+            key="portable_export_html",
+            help="Portable HTML embeds Plotly JavaScript and is larger. Standard HTML uses the Plotly CDN and is smaller.",
         )
-        portable = st.checkbox("Portable self-contained HTML", value=False, help="Larger files that work without loading Plotly from a CDN.")
-        first, second = st.columns(2)
-        if first.button("Prepare selected downloads", type="primary", disabled=not selected, width="stretch"):
-            with st.spinner("Generating selected exports…"):
-                st.session_state.prepared_exports = export_bundle(
+        st.caption("Portable HTML embeds Plotly JavaScript and is larger. Standard HTML uses the Plotly CDN and is smaller.")
+        prepare_selected = st.form_submit_button(
+            "PREPARE SELECTED DOWNLOADS",
+            type="primary",
+            width="stretch",
+        )
+        st.divider()
+        st.markdown("#### Download Complete Analysis Package")
+        st.caption("Creates one ZIP containing every applicable specialist report, the combined report, and all research data.")
+        prepare_complete = st.form_submit_button(
+            "PREPARE COMPLETE ANALYSIS PACKAGE",
+            width="stretch",
+        )
+
+    price_options = _price_export_options(controls)
+    if prepare_selected:
+        selected = [key for key, enabled in choices.items() if enabled and export_is_available(result, key)]
+        if not selected:
+            st.warning("Select at least one report or data export.")
+        else:
+            with st.spinner("Preparing selected exports…"):
+                st.session_state.prepared_download = prepare_selected_download(
                     result,
                     selected,
                     theme=controls["theme"],
                     portable_html=portable,
-                    price_options={
-                        "price_mode": controls["price_mode"], "default_scale": controls["price_scale"],
-                        "show_splits": controls["show_splits"], "show_dividends": controls["show_dividends"],
-                        "show_volume": controls["show_volume"], "show_drawdown": controls["show_drawdown"],
-                    },
+                    price_options=price_options,
                 )
                 st.session_state.prepared_export_ticker = result.ticker
-        if second.button("Prepare complete analysis ZIP", width="stretch"):
-            with st.spinner("Building the complete analysis package…"):
-                package_keys = list(available)
-                files = export_bundle(result, package_keys, theme=controls["theme"], portable_html=portable)
-                stamp = date.today().isoformat()
-                filename = f"{safe_ticker(result.ticker)}_Equity_Lifetime_Explorer_{stamp}.zip"
-                st.session_state.prepared_exports = {filename: zip_bytes(files)}
-                st.session_state.prepared_export_ticker = result.ticker
-        prepared = st.session_state.get("prepared_exports", {})
-        if st.session_state.get("prepared_export_ticker") != result.ticker:
-            prepared = {}
-        if prepared:
-            st.success(f"{len(prepared)} download{'s' if len(prepared) != 1 else ''} ready.")
-            for filename, payload in prepared.items():
-                mime = "application/zip" if filename.endswith(".zip") else (
-                    "text/html" if filename.endswith(".html") else "text/csv"
-                )
-                st.download_button(
-                    f"Download {filename}", data=payload, file_name=filename, mime=mime,
-                    key=f"download_{filename}", width="stretch",
-                )
+
+    if prepare_complete:
+        with st.spinner("Building the complete analysis package…"):
+            st.session_state.prepared_download = prepare_complete_package(
+                result,
+                theme=controls["theme"],
+                portable_html=portable,
+                price_options=price_options,
+            )
+            st.session_state.prepared_export_ticker = result.ticker
+
+    prepared = st.session_state.get("prepared_download")
+    if st.session_state.get("prepared_export_ticker") != result.ticker:
+        prepared = None
+    if prepared is not None:
+        st.success(prepared.status)
+        st.download_button(
+            f"DOWNLOAD {prepared.filename}",
+            data=prepared.payload,
+            file_name=prepared.filename,
+            mime=prepared.mime,
+            key=f"download_{prepared.filename}",
+            type="primary",
+            width="stretch",
+        )
 
 
 with st.sidebar:
@@ -278,7 +315,7 @@ if analyze_clicked:
         with st.spinner("Retrieving and analyzing maximum available market history…", show_time=True):
             result = analyze(ticker, force_refresh)
             st.session_state.analysis_result = result
-            st.session_state.prepared_exports = {}
+            st.session_state.prepared_download = None
             st.session_state.prepared_export_ticker = None
         st.toast(f"{result.metadata.ticker} analysis complete", icon="✅")
     except ValueError as exc:
@@ -308,7 +345,8 @@ with navigation:
         width="stretch",
     )
 with downloads:
-    render_downloads_popover(result, controls)
+    if st.button("Downloads", icon=":material/download:", width="stretch"):
+        render_download_center(result, controls)
 
 with st.container(border=True):
     if workspace == "Price & Ownership":

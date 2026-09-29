@@ -2,8 +2,14 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.formatting import format_percent
-from src.ui import active_theme_type, dividend_kpi_cards, kpi_grid_html, visual_css
+from src.formatting import format_money, format_percent
+from src.ui import (
+    active_theme_type,
+    dividend_kpi_cards,
+    dividend_secondary_facts,
+    kpi_grid_html,
+    visual_css,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,13 +46,28 @@ def test_dividend_growth_kpi_reuses_validated_metric(synthetic_result):
     assert "LATEST ANNUAL DIVIDEND GROWTH" in kpi_grid_html(cards)
 
 
+def test_ytd_dividend_secondary_facts_reuse_validated_metrics(synthetic_result):
+    facts = dict(dividend_secondary_facts(synthetic_result))
+    metrics = synthetic_result.dividend_metrics
+    assert facts["2025 YTD dividend"] == format_money(
+        metrics["current_year_ytd_dividend"], synthetic_result.metadata.currency
+    )
+    assert facts["Prior-year same period"] == format_money(
+        metrics["prior_year_same_period_dividend"], synthetic_result.metadata.currency
+    )
+    assert facts["YTD dividend growth"] == format_percent(metrics["ytd_dividend_growth"])
+
+
 def test_app_uses_transient_progress_native_theme_and_lazy_workspace_flow():
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     assert 'st.radio("Theme"' not in source
     assert "st.status(" not in source
     assert "st.spinner(" in source and "st.toast(" in source
     assert "active_theme_type()" in source
-    assert "render_downloads_popover" in source
+    assert "render_download_center" in source
+    assert '@st.dialog("Download Center", width="large")' in source
+    assert "st.multiselect(" not in source
+    assert "st.form(" in source and "st.checkbox(" in source
     assert 'with st.expander("Downloads"' not in source
     assert "No cash-dividend history found" in source
 

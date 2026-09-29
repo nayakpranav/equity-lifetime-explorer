@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import io
-import json
 import re
 import zipfile
 from datetime import date
@@ -156,6 +155,159 @@ For informational and research purposes only. Market data may be delayed, incomp
     return document.encode("utf-8")
 
 
+def _report_cards(cards: list[tuple[str, str]]) -> str:
+    return "".join(
+        "<div class='card'><small>{}</small><strong>{}</strong></div>".format(
+            html.escape(label.upper()), html.escape(value)
+        )
+        for label, value in cards
+    )
+
+
+def _report_table(frame: pd.DataFrame, columns: list[str] | None = None) -> str:
+    if frame.empty:
+        return "<div class='empty-state'>No records are available for this section.</div>"
+    selected = [column for column in (columns or list(frame.columns)) if column in frame.columns]
+    return "<div class='table-wrap'>" + frame[selected].to_html(
+        index=False,
+        border=0,
+        classes="data-table",
+        escape=True,
+    ) + "</div>"
+
+
+def combined_research_html(
+    result: AnalysisResult,
+    *,
+    theme: str = "dark",
+    portable: bool = False,
+    price_options: dict | None = None,
+) -> bytes:
+    """Compose one navigable research report with a single Plotly.js payload."""
+    if theme not in THEMES:
+        raise ValueError("theme must be dark or light")
+    metadata = result.metadata
+    palette = THEMES[theme]
+    include_js: str | bool = True if portable else "cdn"
+    chart_config = {"displaylogo": False, "responsive": True}
+    price_figure = build_lifetime_chart(result, theme=theme, **(price_options or {}))
+    volume_figure = build_volume_chart(result, theme=theme)
+    price_chart = price_figure.to_html(
+        full_html=False,
+        include_plotlyjs=include_js,
+        config=chart_config,
+        div_id="price-ownership-chart",
+    )
+    volume_chart = volume_figure.to_html(
+        full_html=False,
+        include_plotlyjs=False,
+        config=chart_config,
+        div_id="volume-liquidity-chart",
+    )
+    if result.dividend_status == "NONE":
+        dividend_chart = (
+            "<div class='empty-state dividend-empty'>"
+            "<strong>No provider-reported cash-dividend history is available for this security.</strong>"
+            "<span>Price, ownership and liquidity analysis remain available elsewhere in this report.</span>"
+            "</div>"
+        )
+        dividend_cards = ""
+        dividend_table = ""
+    else:
+        dividend_figure = build_dividend_chart(result, theme=theme)
+        dividend_chart = dividend_figure.to_html(
+            full_html=False,
+            include_plotlyjs=False,
+            config=chart_config,
+            div_id="dividend-total-return-chart",
+        )
+        dividend_cards = f"<div class='cards'>{_report_cards(_kpi_cards(result, 'dividend'))}</div>"
+        dividend_table = "<h3>Annual Dividend Summary</h3>" + _report_table(
+            result.annual_dividends.tail(15)
+        )
+
+    factor = result.metrics.get("cumulative_share_multiplier")
+    if factor is None or abs(float(factor) - 1.0) < 1e-10:
+        ownership = "No included share-changing action alters the earliest-observation share basis."
+    else:
+        ownership = (
+            f"One share at the earliest provider observation represents {float(factor):,.6g} current shares "
+            "after included recorded actions."
+        )
+
+    volume_events = result.volume_events
+    if not volume_events.empty and "relative_volume_rank" in volume_events:
+        volume_events = volume_events.dropna(subset=["relative_volume_rank"]).nsmallest(
+            10, "relative_volume_rank"
+        )
+    volume_columns = [
+        "date", "raw_close", "daily_return", "volume", "volume_ma_20",
+        "relative_volume_20", "dollar_volume", "direction",
+    ]
+    action_columns = [
+        "date", "event", "ratio", "share_multiplier", "cumulative_multiplier",
+        "source", "confidence", "included_in_reconstruction", "notes",
+    ]
+    provenance = result.provenance
+    provenance_frame = pd.DataFrame(
+        [
+            ("Primary provider", provenance.provider),
+            ("Retrieval timestamp", provenance.retrieval_timestamp_utc),
+            ("First observation", provenance.first_available_observation),
+            ("Latest observation", provenance.last_available_observation),
+            ("Observations", f"{len(result.prices):,}"),
+            ("Corporate-action records", f"{len(result.actions):,}"),
+            ("Data-quality confidence", provenance.validation_status),
+        ],
+        columns=["Field", "Value"],
+    )
+    notes = "".join(f"<li>{html.escape(str(note))}</li>" for note in provenance.notes)
+    methodology = html.escape(result.methodology).replace("\n", "<br>")
+    portable_note = (
+        "Self-contained Plotly JavaScript is embedded once for all charts."
+        if portable else
+        "Plotly JavaScript loads once from the CDN; internet access is required when opening this report."
+    )
+    panel = "#0A1326" if theme == "dark" else "#FFFFFF"
+    page = "#060913" if theme == "dark" else "#F4F7FC"
+    line = "#263757" if theme == "dark" else "#C8D5E8"
+    nav = "rgba(7,13,27,.94)" if theme == "dark" else "rgba(244,247,252,.94)"
+    card_background = (
+        "linear-gradient(135deg,rgba(21,35,66,.97),rgba(42,23,61,.88))"
+        if theme == "dark" else
+        "linear-gradient(135deg,rgba(255,255,255,.99),rgba(242,246,255,.97))"
+    )
+    title = f"{metadata.name or metadata.ticker} — Complete Equity Research Report"
+    document = f"""<!doctype html>
+<html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>{html.escape(title)}</title>
+<style>
+:root{{--page:{page};--panel:{panel};--ink:{palette['text']};--muted:{palette['muted']};--line:{line};--blue:{palette['primary']};--green:{palette['dividend']};--red:{palette['drawdown']};--violet:{palette['adjusted']};--nav:{nav}}}
+*{{box-sizing:border-box}}html{{scroll-behavior:smooth;scroll-padding-top:76px}}body{{margin:0;background:var(--page);color:var(--ink);font-family:Inter,Arial,sans-serif}}
+.topnav{{position:sticky;top:0;z-index:50;display:flex;gap:6px;align-items:center;overflow-x:auto;padding:11px max(16px,calc((100vw - 1500px)/2));background:var(--nav);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}}
+.topnav a{{white-space:nowrap;color:var(--muted);text-decoration:none;padding:8px 11px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.025em}}.topnav a:hover{{color:var(--ink);background:var(--panel)}}
+main{{max-width:1500px;margin:auto;padding:28px clamp(16px,4vw,58px) 60px}}.hero{{padding:24px clamp(20px,3vw,36px);border:1px solid var(--line);border-radius:20px;background:linear-gradient(115deg,{panel},rgba(66,35,92,.70));box-shadow:0 16px 42px rgba(0,0,0,.20)}}
+.eyebrow{{color:var(--blue);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}}h1{{font-size:clamp(30px,4vw,48px);letter-spacing:-.035em;margin:7px 0 6px}}.meta,.section-copy,footer{{color:var(--muted);line-height:1.55}}
+.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:11px;margin:18px 0}}.card{{position:relative;overflow:hidden;min-height:88px;padding:15px 16px;border:1px solid var(--line);border-radius:17px;background:{card_background};box-shadow:0 10px 28px rgba(0,0,0,.15)}}
+.card:before{{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--blue)}}.card small{{display:block;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.075em;margin-bottom:8px}}.card strong{{font-size:20px;font-variant-numeric:tabular-nums}}
+.report-section{{margin-top:30px;padding:22px;border:1px solid var(--line);border-radius:19px;background:var(--panel);box-shadow:0 12px 34px rgba(0,0,0,.12)}}h2{{margin:0 0 7px;font-size:clamp(22px,2.4vw,31px)}}h3{{margin:24px 0 10px}}.chart{{margin-top:16px;overflow:hidden;border:1px solid var(--line);border-radius:16px}}
+.callout,.empty-state{{display:flex;flex-direction:column;gap:7px;padding:16px 18px;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:14px;background:{card_background};line-height:1.5}}.dividend-empty{{border-left-color:var(--violet);margin-top:16px}}.dividend-empty span{{color:var(--muted)}}
+.table-wrap{{overflow:auto;border:1px solid var(--line);border-radius:14px;margin-top:12px}}.data-table{{width:100%;border-collapse:collapse;font-size:12px}}.data-table th,.data-table td{{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}}.data-table th{{color:var(--muted);background:{card_background};position:sticky;top:0}}.data-table th:first-child,.data-table td:first-child{{text-align:left}}
+.method-copy{{line-height:1.65}}footer{{padding:28px 4px 0;font-size:12px}}@media(max-width:760px){{.report-section{{padding:16px}}.topnav{{padding:9px 12px}}.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.card strong{{font-size:17px}}}}
+</style></head><body>
+<nav class='topnav' aria-label='Report sections'><a href='#overview'>Overview</a><a href='#price'>Price &amp; Ownership</a><a href='#volume'>Volume &amp; Liquidity</a><a href='#dividends'>Dividends &amp; Total Return</a><a href='#actions'>Corporate Actions</a><a href='#validation'>Data Quality</a><a href='#methodology'>Methodology</a></nav>
+<main><header class='hero' id='overview'><div class='eyebrow'>Equity Lifetime Explorer</div><h1>{html.escape(metadata.name or metadata.ticker)}</h1><div class='meta'>{html.escape(metadata.ticker)} · {html.escape(metadata.exchange)} · {html.escape(metadata.currency)}{(' · ' + html.escape(metadata.sector)) if metadata.sector else ''} · {len(result.prices):,} observations</div></header>
+<section class='cards'>{_report_cards(_kpi_cards(result, 'lifetime'))}</section>
+<section class='report-section' id='price'><h2>Price &amp; Ownership</h2><div class='section-copy'>Raw market quotations, provider-adjusted history and the mechanical ownership-equivalent reconstruction.</div><div class='chart'>{price_chart}</div><div class='callout'><strong>Ownership-equivalent interpretation</strong><span>{html.escape(ownership)} This is a mechanical reconstruction, not a counterfactual market-price forecast.</span></div></section>
+<section class='report-section' id='volume'><h2>Volume &amp; Liquidity</h2><div class='section-copy'>Long-run share volume, dollar volume, relative activity and unusual participation.</div><div class='cards'>{_report_cards(_kpi_cards(result, 'volume'))}</div><div class='chart'>{volume_chart}</div><h3>Notable Volume Events</h3>{_report_table(volume_events, volume_columns)}<div class='section-copy'>High volume indicates elevated participation; it does not identify participant classes or establish accumulation, distribution or causation.</div></section>
+<section class='report-section' id='dividends'><h2>Dividends &amp; Total Return</h2><div class='section-copy'>Provider-reported dividends, completed-year growth, historical yield and total-return context.</div>{dividend_cards}<div class='chart'>{dividend_chart}</div>{dividend_table}</section>
+<section class='report-section' id='actions'><h2>Corporate Actions</h2><div class='section-copy'>Provider and researched share-changing events used by the existing validated reconstruction.</div>{_report_table(result.actions, action_columns)}</section>
+<section class='report-section' id='validation'><h2>Data Quality</h2><div class='section-copy'>Overall confidence: <strong>{html.escape(provenance.validation_status)}</strong></div>{_report_table(result.validation)}</section>
+<section class='report-section' id='methodology'><h2>Methodology &amp; Provenance</h2>{_report_table(provenance_frame)}<h3>Methodological notes</h3><div class='method-copy'>{methodology}</div>{('<h3>Provider notes</h3><ul>' + notes + '</ul>') if notes else ''}<div class='callout'><strong>Limitations</strong><span>Market data may be delayed, incomplete or retrospectively adjusted. Mechanical no-split values are ownership-equivalent reconstructions and are not estimates of prices that would necessarily have prevailed without corporate actions. {portable_note}</span></div></section>
+<footer>For informational and research purposes only. This report is not investment advice.</footer></main></body></html>"""
+    return document.encode("utf-8")
+
+
 def report_html(
     result: AnalysisResult,
     report: str,
@@ -188,21 +340,23 @@ def export_bundle(
     theme: str = "dark",
     portable_html: bool = False,
     price_options: dict | None = None,
+    stamp: date | None = None,
 ) -> dict[str, bytes]:
     """Generate only selected exports; no persistent filesystem is required."""
-    stamp = date.today().isoformat()
+    report_date = (stamp or date.today()).isoformat()
     ticker = safe_ticker(result.ticker)
     builders: dict[str, tuple[str, Callable[[], bytes]]] = {
-        "lifetime_html": (f"{ticker}_lifetime_chart_{stamp}.html", lambda: report_html(result, "lifetime", theme=theme, portable=portable_html, price_options=price_options)),
-        "volume_html": (f"{ticker}_volume_liquidity_{stamp}.html", lambda: report_html(result, "volume", theme=theme, portable=portable_html)),
-        "history_csv": (f"{ticker}_lifetime_history_{stamp}.csv", lambda: historical_csv(result)),
-        "actions_csv": (f"{ticker}_corporate_actions_{stamp}.csv", lambda: actions_csv(result)),
-        "validation_csv": (f"{ticker}_validation_{stamp}.csv", lambda: validation_csv(result)),
+        "lifetime_html": (f"{ticker}_lifetime_chart_{report_date}.html", lambda: report_html(result, "lifetime", theme=theme, portable=portable_html, price_options=price_options)),
+        "volume_html": (f"{ticker}_volume_liquidity_{report_date}.html", lambda: report_html(result, "volume", theme=theme, portable=portable_html)),
+        "combined_html": (f"{ticker}_complete_research_report_{report_date}.html", lambda: combined_research_html(result, theme=theme, portable=portable_html, price_options=price_options)),
+        "history_csv": (f"{ticker}_lifetime_history_{report_date}.csv", lambda: historical_csv(result)),
+        "actions_csv": (f"{ticker}_corporate_actions_{report_date}.csv", lambda: actions_csv(result)),
+        "validation_csv": (f"{ticker}_validation_{report_date}.csv", lambda: validation_csv(result)),
     }
     if result.dividend_status != "NONE":
         builders.update({
-            "dividend_html": (f"{ticker}_dividend_total_return_{stamp}.html", lambda: report_html(result, "dividend", theme=theme, portable=portable_html)),
-            "dividend_csv": (f"{ticker}_dividend_summary_{stamp}.csv", lambda: dividend_summary_csv(result)),
+            "dividend_html": (f"{ticker}_dividend_total_return_{report_date}.html", lambda: report_html(result, "dividend", theme=theme, portable=portable_html)),
+            "dividend_csv": (f"{ticker}_dividend_summary_{report_date}.csv", lambda: dividend_summary_csv(result)),
         })
     output: dict[str, bytes] = {}
     for key in selections:
