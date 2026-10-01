@@ -7,6 +7,7 @@ from src.charts import build_dividend_chart, build_lifetime_chart, build_volume_
 from src.charts.common import display_result
 from src.charts.dividends import dividend_display_result
 from src.charts.volume import _rvol_axis_upper
+from src.exports import export_bundle
 
 
 def _long_dividend_result(synthetic_result):
@@ -73,30 +74,46 @@ def test_dividend_legend_band_and_compact_labels(synthetic_result):
     } <= titles
 
 
-def test_dividend_annual_bar_dates_use_year_end_and_latest_observation(synthetic_result):
+def test_annual_dividend_categories_align_bars_growth_and_ytd_hover(synthetic_result):
     result = copy.deepcopy(synthetic_result)
-    latest_observation = pd.Timestamp("2025-10-17")
-    result.prices = result.prices.loc[result.prices.index <= latest_observation].copy()
-
-    current_year = int(result.annual_dividends["year"].max())
-    current_mask = result.annual_dividends["year"].eq(current_year)
-    result.annual_dividends.loc[current_mask, "completed_year"] = False
-    result.annual_dividends.loc[current_mask, "ytd"] = True
-    result.annual_dividends.loc[current_mask, "year_label"] = f"{current_year} YTD"
+    latest_observation = pd.Timestamp("2026-09-29")
+    latest_price = result.prices.iloc[[-1]].copy()
+    latest_price.index = pd.DatetimeIndex([latest_observation])
+    result.prices = pd.concat([result.prices, latest_price])
+    current_ytd = result.annual_dividends.iloc[[-1]].copy()
+    current_ytd.loc[:, "year"] = 2026
+    current_ytd.loc[:, "year_label"] = "2026 YTD"
+    current_ytd.loc[:, "completed_year"] = False
+    current_ytd.loc[:, "ytd"] = True
+    current_ytd.loc[:, "yoy_growth"] = np.nan
+    result.annual_dividends = pd.concat([result.annual_dividends, current_ytd], ignore_index=True)
 
     figure = build_dividend_chart(result, theme="dark")
     traces = {trace.name: trace for trace in figure.data if trace.name}
-    completed_dates = pd.DatetimeIndex(pd.to_datetime(traces["Annual DPS"].x))
-    ytd_dates = pd.DatetimeIndex(pd.to_datetime(traces["Current YTD"].x))
+    completed_years = ["2022", "2023", "2024", "2025"]
+    assert list(traces["Annual DPS"].x) == completed_years
+    assert list(traces["YoY Growth"].x) == completed_years
+    assert list(traces["Current YTD"].x) == ["2026 YTD"]
+    assert traces["Current YTD"].marker.opacity < traces["Annual DPS"].marker.opacity
+    assert "29 Sep 2026" in traces["Current YTD"].hovertemplate
+    assert "Dividend events: %{customdata[1]}" in traces["Current YTD"].hovertemplate
+    assert "Incomplete year" in traces["Current YTD"].hovertemplate
+    assert list(figure.layout.xaxis.categoryarray) == [*completed_years, "2026 YTD"]
+    assert figure.layout.xaxis.type == "category"
+    assert list(figure.layout.xaxis.tickvals) == [*completed_years, "2026 YTD"]
 
-    assert all((date.month, date.day) == (12, 31) for date in completed_dates)
-    assert list(ytd_dates) == [result.prices.index.max()]
-    assert ytd_dates[0] != pd.Timestamp(f"{current_year}-12-31")
-    assert figure.layout.xaxis.tickformat == "%Y"
+    reports = export_bundle(result, ["dividend_html", "combined_html"])
+    for report in reports.values():
+        html = report.decode("utf-8")
+        assert '"categoryarray":["2022","2023","2024","2025","2026 YTD"]' in html
+        assert "29 Sep 2026" in html
 
 
 def test_dividend_horizon_filters_all_visual_sections(synthetic_result):
     result = _long_dividend_result(synthetic_result)
+    full_figure = build_dividend_chart(result, theme="dark", horizon="MAX")
+    assert len(full_figure.layout.xaxis.tickvals) < len(full_figure.layout.xaxis.categoryarray)
+    assert full_figure.layout.xaxis.tickvals[-1] == full_figure.layout.xaxis.categoryarray[-1]
     full = dividend_display_result(result, "MAX")
     ten_year = dividend_display_result(result, "10Y")
     start = result.prices.index.max() - pd.DateOffset(years=10)
@@ -108,7 +125,7 @@ def test_dividend_horizon_filters_all_visual_sections(synthetic_result):
 
     figure = build_dividend_chart(result, theme="dark", horizon="10Y")
     traces = {trace.name: trace for trace in figure.data if trace.name}
-    assert pd.to_datetime(traces["Annual DPS"].x).min().year >= start.year
+    assert min(int(year) for year in traces["Annual DPS"].x) >= start.year
     assert pd.to_datetime(traces["TTM DPS"].x).min() >= start
     assert pd.to_datetime(traces["Price Only"].x).min() >= start
     assert min(int(year) for year in traces["Dividend Calendar"].y) >= start.year

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 
 import numpy as np
 import pandas as pd
@@ -96,10 +97,17 @@ def build_dividend_total_return_figure(
 
     completed = annual[annual["completed_year"].fillna(False)]
     ytd = annual[annual["ytd"].fillna(False)]
-    completed_dates = pd.to_datetime(completed["year"].astype(int).astype(str) + "-12-31")
+    annual_categories = (
+        annual[annual["completed_year"].fillna(False) | annual["ytd"].fillna(False)]
+        .sort_values("year")["year_label"].astype(str).tolist()
+    )
+    tick_step = max(1, math.ceil(len(annual_categories) / 12))
+    visible_year_ticks = annual_categories[::tick_step]
+    if annual_categories and visible_year_ticks[-1] != annual_categories[-1]:
+        visible_year_ticks.append(annual_categories[-1])
     fig.add_trace(
         go.Bar(
-            x=completed_dates, y=completed["annual_dividend"],
+            x=completed["year_label"].astype(str), y=completed["annual_dividend"],
             name="Annual DPS", marker={"color": palette["dividend"], "opacity": 0.82},
             customdata=completed[["year_label", "payment_count"]].to_numpy(),
             hovertemplate=(
@@ -113,30 +121,29 @@ def build_dividend_total_return_figure(
     )
     if len(ytd):
         latest_observation = pd.Timestamp(prices.index.max())
-        ytd_dates = pd.DatetimeIndex([latest_observation] * len(ytd))
         fig.add_trace(
             go.Bar(
-                x=ytd_dates, y=ytd["annual_dividend"], name="Current YTD",
+                x=ytd["year_label"].astype(str), y=ytd["annual_dividend"], name="Current YTD",
                 marker={"color": palette["dividend"], "opacity": 0.35},
                 customdata=ytd[["year_label", "payment_count"]].to_numpy(),
                 hovertemplate=(
                     "<b>%{customdata[0]}</b>"
                     f"<br>Provider dividend YTD: {prefix}%{{y:,.4f}}{suffix}"
                     "<br>Dividend events: %{customdata[1]}"
+                    f"<br>Latest market observation: {latest_observation:%d %b %Y}"
                     "<br>Incomplete year — excluded from structural growth metrics<extra></extra>"
                 ),
             ),
             row=1, col=1, secondary_y=False,
         )
-    exact_growth = pd.to_numeric(annual["yoy_growth"], errors="coerce")
+    exact_growth = pd.to_numeric(completed["yoy_growth"], errors="coerce")
     plotted_growth = exact_growth.clip(lower=-1.0, upper=2.0)
-    annual_dates = pd.to_datetime(annual["year"].astype(int).astype(str) + "-12-31")
     fig.add_trace(
         go.Scatter(
-            x=annual_dates, y=plotted_growth, name="YoY Growth",
+            x=completed["year_label"].astype(str), y=plotted_growth, name="YoY Growth",
             mode="lines+markers", line={"color": palette["adjusted"], "width": 1.6},
             marker={"size": 5},
-            customdata=np.column_stack([annual["year_label"].to_numpy(), exact_growth.to_numpy()]),
+            customdata=np.column_stack([completed["year_label"].to_numpy(), exact_growth.to_numpy()]),
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>Exact completed-year growth: %{customdata[1]:+.2%}"
                 "<br>Display axis is clipped to −100% / +200%<extra></extra>"
@@ -281,7 +288,11 @@ def build_dividend_total_return_figure(
     fig.update_yaxes(title_text=f"TTM Dividend ({currency})", tickprefix=prefix, ticksuffix=suffix, rangemode="tozero", row=2, col=1, secondary_y=False)
     fig.update_yaxes(title_text="TTM Yield", tickformat=".1%", rangemode="tozero", row=2, col=1, secondary_y=True)
     fig.update_yaxes(title_text=f"Value ({currency})", type="log", row=3, col=1)
-    fig.update_xaxes(tickformat="%Y", dtick="M12", row=1, col=1)
+    fig.update_xaxes(
+        type="category", categoryorder="array", categoryarray=annual_categories,
+        tickmode="array", tickvals=visible_year_ticks, ticktext=visible_year_ticks,
+        row=1, col=1,
+    )
     fig.update_xaxes(matches="x3", showgrid=True, gridcolor=palette["grid"], row=2, col=1)
     fig.update_xaxes(
         title_text="Date", showgrid=True, gridcolor=palette["grid"],
