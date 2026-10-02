@@ -58,13 +58,13 @@ current partial calendar year is excluded from structural CAGRs and streaks.
 Adjusted Close is described as a pre-tax, pre-fee total-return proxy only when
 the provider genuinely supplied it.
 
-### Release A Financial Fundamentals (feature branch)
+### Release A Financial Fundamentals
 
 The financial layer uses the SEC's public [Company Facts and submissions APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces). It maps only audited standard `us-gaap` concepts for the four pilot issuers. Normalized observations retain accession, fiscal dates, filing and acceptance timestamps, original unit, exact decimal value, revision status, and source lineage. Historical statements are **latest-disclosed**, not point-in-time as-known-at-date valuation inputs. The full observation ledger and selection decisions are exportable.
 
 Annual and standalone quarterly views keep duration flows distinct from instant balance-sheet facts. Compatible cumulative monetary flows may be subtracted to derive a standalone quarter; EPS is never derived this way. PPE capital spending is a positive cash outflow; ordinary free cash flow is operating cash flow less verified PPE spending, excluding acquisitions. Missing inputs are not treated as zero. Revenue, operating income, **parent-attributable** net income, EPS, cash flows, cash, reported long-term debt, margins and compatible growth rates are surfaced only when supported. Reported long-term debt is **not** a complete debt total, so total debt and net debt are deliberately withheld. No historical valuation multiples are calculated in Release A.
 
-The pilot is explicitly limited to U.S. reporting issuers and USD concepts. NVDA's recent broader productive-asset-spending disclosure is kept separate from PPE capital spending, so latest PPE-basis FCF remains unavailable. Company Facts omits custom company-specific tags; broader issuer coverage requires further concept audits. An unavailable SEC module does not prevent the original market workspaces from working. See [Release A hardening and Release B readiness](RELEASE_A_HARDENING.md) for pilot coverage, ratio definitions, reconciliations, and unresolved limitations.
+The pilot is explicitly limited to U.S. reporting issuers and USD concepts. NVDA's recent broader productive-asset-spending disclosure is kept separate from PPE capital spending, so latest PPE-basis FCF remains unavailable. Company Facts omits custom company-specific tags; broader issuer coverage requires further concept audits. An unavailable SEC module does not prevent the original market workspaces from working. See [Release A hardening and Release B readiness](RELEASE_A_HARDENING.md) for pilot coverage, ratio definitions, reconciliations, and unresolved limitations, and the [production validation record](RELEASE_A_PRODUCTION_VALIDATION.md) for deployment checks.
 
 An optional, default-off chart overlay uses the existing split-adjusted
 current-share price (without dividend reinvestment) at the latest trading close
@@ -128,8 +128,8 @@ See [MIGRATION_AUDIT.md](MIGRATION_AUDIT.md) for the Colab v5 feature mapping.
 2. In Streamlit Community Cloud, choose the repository and branch.
 3. Set the entry point to `app.py`.
 4. For Release A SEC access, configure `SEC_USER_AGENT` privately in Streamlit
-   secrets before deployment. Do not publish this feature branch until it has
-   passed the release checkpoint and deployment is explicitly approved.
+   secrets before deployment. Do not commit the operator contact or include it
+   in public exports.
 
 The local provider cache uses the operating system's temporary directory and is
 only an optimization. The application does not depend on filesystem persistence.
