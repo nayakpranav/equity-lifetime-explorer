@@ -13,8 +13,9 @@ import pandas as pd
 import pytest
 
 from src.downloads import complete_export_keys, prepare_complete_package, prepare_selected_download
-from src.charts.fundamentals import build_fundamentals_figures
+from src.charts.fundamentals import align_split_adjusted_price, build_fundamentals_figures
 from src.exports import combined_research_html, export_bundle
+from src.financial_exports import annual_financial_csv, fundamentals_html
 from src.financial_models import FundamentalsResult, SecurityIdentity
 from src.financials.analytics import build_period_table, calculate_fundamentals
 from src.financials.capital_efficiency import calculate_capital_efficiency
@@ -28,6 +29,7 @@ from src.financials.concepts import mappings_for
 from src.financials.vintages import select_latest_disclosed
 from src.providers.sec import SecFinancialPayload, SecFinancialProvider, SecTransportError, UnsupportedSecIdentity
 from src.research_service import run_fundamentals_analysis
+from src.report_tables import display_cell
 import src.research_service as research_service
 import src.service as market_service
 from streamlit.testing.v1 import AppTest
@@ -135,6 +137,19 @@ def test_canonical_fact_schema_provenance_and_conservative_quarter_derivation():
     annual = build_period_table(selected, derived, frequency="annual")
     assert annual.iloc[-1].currency == "USD"
     assert annual.iloc[-1].fiscal_year == 2025
+
+
+def test_instant_fact_missing_start_remains_schema_null_after_dataframe_materialization():
+    payload = _payload()
+    accession = "0000789019-25-000102"
+    payload.facts["facts"]["us-gaap"]["CashAndCashEquivalentsAtCarryingValue"] = {
+        "units": {"USD": [_fact(None, "2025-06-30", 40, accession, "2025-07-31")]}
+    }
+    observations = normalize_sec_facts(payload)
+    instant = observations.loc[observations["normalized_concept"].eq("cash_equivalents")].iloc[0]
+    assert instant["period_start"] is None
+    for record in observations.to_dict("records"):
+        validate_observation(record)
 
 
 def test_coverage_distinguishes_raw_source_from_mapped_selected_periods():
@@ -543,6 +558,9 @@ def test_financial_workspace_and_download_selection_do_not_retrieve_again(monkey
     next(control for control in app.get("button_group") if control.label == "History shown").set_value("5Y").run()
     assert not app.exception
     assert calls == {"market": 1, "sec": 1}
+    next(control for control in app.checkbox if control.label.startswith("Overlay split-adjusted share price")).set_value(True).run()
+    assert not app.exception
+    assert calls == {"market": 1, "sec": 1}
     next(button for button in app.button if button.label == "Downloads").click().run()
     assert not app.exception
     choices = {control.label: control for control in app.checkbox}
@@ -582,3 +600,75 @@ def test_sec_failure_does_not_break_market_workspace_or_remain_cached(monkeypatc
     next(control for control in app.get("button_group") if control.label == "Analytical workspace").set_value("Financial Fundamentals").run()
     assert not app.exception
     assert calls["market"] == 1 and calls["sec"] == 2
+
+
+def test_reader_facing_financial_tables_format_without_changing_csv(synthetic_result):
+    financials = _fundamentals()
+    financials.annual.loc[0, "revenue"] = Decimal("331839000000")
+    financials.annual.loc[0, "roe"] = Decimal("0.340386274504")
+    financials.annual.loc[0, "eps_diluted"] = Decimal("17.95321")
+    financials.annual.loc[0, "fcf"] = None
+    specialist = fundamentals_html(financials).decode()
+    combined = combined_research_html(synthetic_result, fundamentals=financials).decode()
+    for report in (specialist, combined):
+        assert "$331.84B" in report
+        assert "34.0%" in report
+        assert "$17.953" in report
+        assert "<td>2025</td>" in report
+        assert ">—</td>" in report
+        assert "<td>NaN</td>" not in report and "<td>None</td>" not in report
+        assert "Financial Data Quality" in report
+    assert "Market Data Quality" in combined
+    assert "Overall confidence" not in combined
+    csv = annual_financial_csv(financials).decode()
+    assert "331839000000" in csv and "0.340386274504" in csv
+    assert "—" not in csv
+
+
+def test_reader_facing_zero_and_missing_are_distinct_and_units_are_semantic():
+    assert display_cell(None, "revenue", "USD") == "—"
+    assert display_cell(0, "revenue", "USD") != "—"
+    assert display_cell(Decimal("0.340386274504"), "roe", "USD") == "34.0%"
+    assert display_cell(Decimal("331839000000"), "revenue", "USD") == "$331.84B"
+    assert display_cell(Decimal("1.25"), "eps_diluted", "USD") == "$1.250"
+    assert display_cell(2025, "fiscal_year", "USD") == "2025"
+
+
+def test_fiscal_end_overlay_uses_existing_split_adjusted_close_without_lookahead(synthetic_result):
+    market = synthetic_result
+    frame = pd.DataFrame({"period_end": ["2024-05-31", "2024-06-04", "2026-01-31", "2021-01-01", None]})
+    values, dates = align_split_adjusted_price(frame, market)
+    for position in (0, 1):
+        observed = pd.Timestamp(dates[position])
+        assert observed <= pd.Timestamp(frame.loc[position, "period_end"])
+        assert values[position] == pytest.approx(market.prices.loc[observed, "split_adjusted_price_current_share"])
+    assert values[0] != pytest.approx(market.prices.loc[pd.Timestamp(dates[0]), "raw_close"])
+    assert values[2:] == [None, None, None]
+
+
+def test_financial_price_overlay_is_optional_and_propagates_to_reports(synthetic_result):
+    financials = _fundamentals()
+    financials.ticker = synthetic_result.ticker
+    base = build_fundamentals_figures(financials)
+    assert all("Split-adjusted share price" not in [trace.name for trace in figure.data] for figure in base.values())
+    overlaid = build_fundamentals_figures(financials, market=synthetic_result, price_overlay=True)
+    for heading in ("Growth & Profitability", "Cash Generation"):
+        assert "Split-adjusted share price" in [trace.name for trace in overlaid[heading].data]
+    financials.annual.loc[0, "eps_diluted"] = Decimal("1.25")
+    overlaid = build_fundamentals_figures(financials, market=synthetic_result, price_overlay=True)
+    assert "Split-adjusted share price" in [trace.name for trace in overlaid["Reported EPS & Comparable Growth"].data]
+    assert "Split-adjusted share price" not in [trace.name for trace in overlaid["Balance-Sheet Strength"].data]
+    assert all("Split-adjusted share price" not in [trace.name for trace in figure.data]
+               for figure in build_fundamentals_figures(financials, market=synthetic_result, price_overlay=False).values())
+    financials.annual.loc[0, "fcf"] = None
+    no_fcf = build_fundamentals_figures(financials, market=synthetic_result, price_overlay=True)
+    assert "Split-adjusted share price" not in [trace.name for trace in no_fcf["Cash Generation"].data]
+
+    files = export_bundle(
+        synthetic_result, ["fundamentals_html", "combined_html"],
+        fundamentals=financials, financial_price_overlay=True,
+    )
+    for payload in files.values():
+        text = payload.decode()
+        assert "Split-adjusted share price" in text
+        assert "not an as-known-at-date comparison" in text

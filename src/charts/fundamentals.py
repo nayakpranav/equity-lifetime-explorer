@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 
 from ..config import THEMES
 from ..financial_models import FundamentalsResult
+from ..models import AnalysisResult
 from ..financials.horizons import filter_financial_horizon
 from ..formatting import currency_parts
 
@@ -18,6 +19,41 @@ def _plot_values(frame: pd.DataFrame, column: str) -> list[float | None]:
     if column not in frame:
         return [None] * len(frame)
     return [None if value is None or pd.isna(value) else float(value) for value in frame[column]]
+
+
+def align_split_adjusted_price(
+    frame: pd.DataFrame, market: AnalysisResult | None,
+) -> tuple[list[float | None], list[str]]:
+    """Align the validated current-share price basis to each fiscal period end.
+
+    A 7-calendar-day limit allows weekends/holidays without silently pairing a
+    missing fiscal period with an old, unrelated market observation.
+    """
+    unavailable = ([None] * len(frame), ["Unavailable"] * len(frame))
+    if market is None or "split_adjusted_price_current_share" not in market.prices:
+        return unavailable
+    values = pd.to_numeric(market.prices["split_adjusted_price_current_share"], errors="coerce")
+    values = values[values.notna() & values.gt(0)].sort_index()
+    if values.empty:
+        return unavailable
+    aligned: list[float | None] = []
+    dates: list[str] = []
+    for period_end in frame["period_end"]:
+        target = pd.to_datetime(period_end, errors="coerce")
+        if pd.isna(target):
+            aligned.append(None)
+            dates.append("Unavailable")
+            continue
+        if target.tzinfo is not None:
+            target = target.tz_localize(None)
+        position = values.index.searchsorted(target, side="right") - 1
+        if position < 0 or not 0 <= (target - values.index[position]).days <= 7:
+            aligned.append(None)
+            dates.append("Unavailable")
+            continue
+        aligned.append(float(values.iloc[position]))
+        dates.append(str(values.index[position].date()))
+    return aligned, dates
 
 
 def _base_figure(fig: go.Figure, theme: str, *, height: int) -> go.Figure:
@@ -56,6 +92,7 @@ def _display_frame(frame: pd.DataFrame, frequency: str) -> pd.DataFrame:
 def build_fundamentals_figures(
     result: FundamentalsResult, *, theme: str = "dark", frequency: str = "annual",
     horizon: str = "MAX",
+    market: AnalysisResult | None = None, price_overlay: bool = False,
 ) -> OrderedDict[str, go.Figure]:
     if theme not in THEMES:
         raise ValueError("theme must be dark or light")
@@ -67,6 +104,13 @@ def build_fundamentals_figures(
     if frame.empty:
         return OrderedDict()
     frame = _display_frame(frame.sort_values(["fiscal_year", "fiscal_quarter"]), frequency)
+    overlay_enabled = bool(price_overlay and market is not None and market.ticker == result.ticker)
+    aligned_price, price_dates = align_split_adjusted_price(frame, market if overlay_enabled else None)
+    has_overlay = overlay_enabled and any(value is not None for value in aligned_price)
+
+    def prices_with_financial(concept: str) -> list[float | None]:
+        observed = _plot_values(frame, concept)
+        return [price if financial is not None else None for price, financial in zip(aligned_price, observed)]
     palette = THEMES[theme]
     currency = result.identity.reporting_currency if result.identity else "USD"
     prefix, suffix = currency_parts(currency)
@@ -81,7 +125,8 @@ def build_fundamentals_figures(
         if "revenue_acceptance_utc" in frame else ["Acceptance unavailable"] * len(frame)
     )
     income = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.09,
-                           row_heights=[0.43, 0.32, 0.25])
+                           row_heights=[0.43, 0.32, 0.25],
+                           specs=[[{"secondary_y": True}], [{}], [{}]])
     income.add_trace(go.Bar(
         x=labels, y=_plot_values(frame, "revenue"), name="Revenue",
         marker_color=palette["primary"], customdata=list(zip(dates, accepted)),
@@ -110,11 +155,39 @@ def build_fundamentals_figures(
             hovertemplate="%{x}<br>Fiscal end: %{customdata}<br>" + label + ": %{y:.2%}<extra></extra>",
         ), row=3, col=1)
     _base_figure(income, theme, height=740)
-    income.update_yaxes(title_text=f"Revenue ({currency})", tickformat="~s", row=1, col=1)
+    income.update_yaxes(title_text=f"Revenue ({currency})", tickformat="~s", row=1, col=1, secondary_y=False)
     income.update_yaxes(title_text=f"Income ({currency})", tickformat="~s", row=2, col=1)
     income.update_yaxes(title_text="Margin", tickformat=".0%", row=3, col=1)
 
-    cash = go.Figure()
+    price_currency = market.metadata.currency if market is not None else currency
+    price_prefix, price_suffix = currency_parts(price_currency)
+
+    def add_price_overlay(figure: go.Figure, periods: list[str], values: list[float | None],
+                          observed_dates: list[str], *, row: int | None = None) -> None:
+        if not any(value is not None for value in values):
+            return
+        trace = go.Scatter(
+            x=periods, y=values, name="Split-adjusted share price",
+            mode="lines+markers", connectgaps=False,
+            line={"color": palette["event"], "width": 2, "dash": "dot"},
+            marker={"size": 5},
+            customdata=observed_dates,
+            hovertemplate="%{x}<br>Aligned trading close: %{customdata}"
+            f"<br>Split-adjusted price: {price_prefix}%{{y:,.3f}}{price_suffix}"
+            "<br>Financial results were disclosed later; this is not an as-known-at-date comparison.<extra></extra>",
+        )
+        if row is None:
+            figure.add_trace(trace, secondary_y=True)
+            figure.update_yaxes(title_text=f"Split-adjusted price ({price_currency})", secondary_y=True)
+        else:
+            figure.add_trace(trace, row=row, col=1, secondary_y=True)
+            figure.update_yaxes(title_text=f"Split-adjusted price ({price_currency})", row=row, col=1, secondary_y=True)
+        figure.update_layout(margin={"r": 92})
+
+    if has_overlay:
+        add_price_overlay(income, labels, prices_with_financial("revenue"), price_dates, row=1)
+
+    cash = make_subplots(specs=[[{"secondary_y": True}]])
     for concept, label, color, kind in (
         ("ocf", "Operating cash flow", palette["primary"], "bar"),
         ("capex_ppe", "PPE capital spending", palette["event"], "bar"),
@@ -131,8 +204,10 @@ def build_fundamentals_figures(
                                       connectgaps=False, line={"color": color, "width": 2.3},
                                       customdata=dates, hovertemplate=hover))
     _base_figure(cash, theme, height=430)
-    cash.update_yaxes(title_text=f"Cash flow ({currency})", tickformat="~s")
+    cash.update_yaxes(title_text=f"Cash flow ({currency})", tickformat="~s", secondary_y=False)
     cash.update_layout(barmode="group")
+    if has_overlay:
+        add_price_overlay(cash, labels, prices_with_financial("fcf"), price_dates)
 
     balance = go.Figure()
     for concept, label, color in (
@@ -156,7 +231,7 @@ def build_fundamentals_figures(
     ))
 
     eps = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.14,
-                        row_heights=[0.6, 0.4])
+                        row_heights=[0.6, 0.4], specs=[[{"secondary_y": True}], [{}]])
     for concept, name, color in (
         ("eps_basic", "Basic EPS", palette["primary"]),
         ("eps_diluted", "Diluted EPS", palette["adjusted"]),
@@ -185,8 +260,10 @@ def build_fundamentals_figures(
         ), row=2, col=1)
     _base_figure(eps, theme, height=570)
     eps.update_layout(barmode="group")
-    eps.update_yaxes(title_text=f"Reported EPS ({currency}/share)", row=1, col=1)
+    eps.update_yaxes(title_text=f"Reported EPS ({currency}/share)", row=1, col=1, secondary_y=False)
     eps.update_yaxes(title_text="Comparable YoY", tickformat=".0%", row=2, col=1)
+    if has_overlay:
+        add_price_overlay(eps, labels, prices_with_financial("eps_diluted"), price_dates, row=1)
     figures["Reported EPS & Comparable Growth"] = eps
 
     annual = filter_financial_horizon(result.annual, horizon)

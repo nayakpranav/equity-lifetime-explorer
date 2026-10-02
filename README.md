@@ -45,6 +45,9 @@ Share volume is the provider observation. The 20-session and 50-session averages
 use prior completed trading sessions. Relative Volume is current volume divided
 by the prior 20-session average. Dollar Volume is raw as-traded close multiplied
 by share volume; it is an approximation, not exact exchange turnover.
+The latest RVOL is marked preliminary during a recognized open exchange session.
+Because the provider supplies no daily-bar finality flag, same-day pre/post-close
+or unmapped sessions are marked unverified rather than presented as completed.
 
 ### Dividends and total return
 
@@ -62,6 +65,14 @@ The financial layer uses the SEC's public [Company Facts and submissions APIs](h
 Annual and standalone quarterly views keep duration flows distinct from instant balance-sheet facts. Compatible cumulative monetary flows may be subtracted to derive a standalone quarter; EPS is never derived this way. PPE capital spending is a positive cash outflow; ordinary free cash flow is operating cash flow less verified PPE spending, excluding acquisitions. Missing inputs are not treated as zero. Revenue, operating income, **parent-attributable** net income, EPS, cash flows, cash, reported long-term debt, margins and compatible growth rates are surfaced only when supported. Reported long-term debt is **not** a complete debt total, so total debt and net debt are deliberately withheld. No historical valuation multiples are calculated in Release A.
 
 The pilot is explicitly limited to U.S. reporting issuers and USD concepts. NVDA's recent broader productive-asset-spending disclosure is kept separate from PPE capital spending, so latest PPE-basis FCF remains unavailable. Company Facts omits custom company-specific tags; broader issuer coverage requires further concept audits. An unavailable SEC module does not prevent the original market workspaces from working. See [Release A hardening and Release B readiness](RELEASE_A_HARDENING.md) for pilot coverage, ratio definitions, reconciliations, and unresolved limitations.
+
+An optional, default-off chart overlay uses the existing split-adjusted
+current-share price (without dividend reinvestment) at the latest trading close
+on or before each fiscal-period end. It aligns periods for visual comparison;
+financial results were disclosed later and were not known at fiscal year-end.
+Market Data Quality and SEC Financial Data Quality are reported separately,
+without a combined confidence score. HTML tables abbreviate monetary amounts
+for reading, while CSV exports retain original numeric precision.
 
 ## Local installation
 

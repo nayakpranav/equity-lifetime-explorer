@@ -134,7 +134,14 @@ def normalize_sec_facts(payload: SecFinancialPayload) -> pd.DataFrame:
             else:
                 record["revision_status"] = "revision_candidate"
             prior_value = record["value"]
-    return pd.DataFrame.from_records(records)
+    observations = pd.DataFrame.from_records(records)
+    # Instant facts have no start date. Pandas otherwise coerces their None
+    # alongside duration dates to NaN, which violates the nullable schema.
+    if not observations.empty:
+        observations["period_start"] = observations["period_start"].astype(object).where(
+            observations["period_start"].notna(), None
+        )
+    return observations
 
 
 _SCHEMA = json.loads(files("src.financials").joinpath("financial_observation.schema.json").read_text(encoding="utf-8"))

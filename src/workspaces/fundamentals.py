@@ -6,12 +6,15 @@ import streamlit as st
 
 from ..charts.fundamentals import build_fundamentals_figures
 from ..financial_models import FundamentalsResult
+from ..models import AnalysisResult
 from ..financials.horizons import HORIZONS
 from ..financial_ui import fundamentals_kpi_cards
 from ..ui import kpi_grid_html
 
 
-def render_fundamentals_workspace(result: FundamentalsResult, *, theme: str) -> None:
+def render_fundamentals_workspace(
+    result: FundamentalsResult, *, theme: str, market: AnalysisResult | None = None,
+) -> None:
     st.subheader("Financial Fundamentals")
     st.caption("Operating performance, cash generation and financial position from SEC filings.")
     if not result.available:
@@ -37,6 +40,16 @@ def render_fundamentals_workspace(result: FundamentalsResult, *, theme: str) -> 
             "History shown", HORIZONS, default="MAX",
             key="fundamentals_horizon",
         )
+    price_overlay = st.checkbox(
+        "Overlay split-adjusted share price on Revenue, EPS and Free Cash Flow",
+        value=False, key="financial_price_overlay",
+        help="Uses the validated market series on today's share basis, excluding dividend reinvestment. Each price is the latest close on or before the fiscal-period end; financial information was reported later.",
+    )
+    if price_overlay:
+        st.caption(
+            "Price is aligned to fiscal-period end (nearest prior close within seven calendar days), "
+            "not to the filing or acceptance date. Later-reported financial results were not known at fiscal year-end."
+        )
     selected = "quarterly" if frequency == "Quarterly" else "annual"
     frame = result.quarterly if selected == "quarterly" else result.annual
     if frame.empty:
@@ -46,6 +59,7 @@ def render_fundamentals_workspace(result: FundamentalsResult, *, theme: str) -> 
     st.caption("Headline cards use the latest completed annual fiscal period and do not change with the chart horizon. ROE uses parent income and average parent equity; ROCE uses operating income over average assets less current liabilities. Both require compatible consecutive fiscal periods.")
     for heading, figure in build_fundamentals_figures(
         result, theme=theme, frequency=selected, horizon=horizon,
+        market=market, price_overlay=price_overlay,
     ).items():
         st.markdown(f"#### {heading}")
         st.plotly_chart(figure, width="stretch", theme=None, config={"displaylogo": False, "responsive": True})
@@ -60,7 +74,7 @@ def render_fundamentals_workspace(result: FundamentalsResult, *, theme: str) -> 
             "roce", "roce_status",
         ) if column in frame]
         st.dataframe(frame[columns], width="stretch", hide_index=True)
-    with st.expander("Coverage, source lineage and data quality", expanded=False):
+    with st.expander("Financial Data Quality, coverage and source lineage", expanded=False):
         st.caption("Company Facts is an entity-wide standard-concept aggregate. Figures are latest-disclosed and may include later revisions; they are not point-in-time valuation inputs.")
         st.dataframe(result.coverage, width="stretch", hide_index=True)
         if not result.quality.empty:

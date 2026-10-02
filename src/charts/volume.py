@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 from ..config import SHARE_CHANGING_TYPES, THEMES
 from ..formatting import currency_parts, format_money, format_multiple, format_quantity
 from ..models import AnalysisResult
+from ..session_status import assess_latest_rvol
 from .common import (
     _volume_available, _volume_bar_colors, _volume_customdata, _volume_hovertemplate,
     display_result, downsample_for_plot,
@@ -54,6 +55,7 @@ def build_volume_liquidity_figure(
         return _empty_volume_figure(result, theme)
     palette = THEMES[theme]
     prices = result.prices
+    rvol_assessment = assess_latest_rvol(result)
     currency = result.metadata.currency
     prefix, suffix = currency_parts(currency)
 
@@ -139,8 +141,10 @@ def build_volume_liquidity_figure(
             mode="lines", line={"color": palette["rvol"], "width": 1.5},
             fill="tozeroy", fillcolor="rgba(232,193,90,0.10)",
             customdata=prices[["volume", "volume_ma_20", "daily_return"]].to_numpy(),
+            text=["Historical observation"] * (len(prices) - 1) + [rvol_assessment.status.title()],
             hovertemplate=(
                 "<b>%{x|%d %b %Y}</b><br>RVOL: %{y:.2f}×"
+                "<br>Session status: %{text}"
                 "<br>Share volume: %{customdata[0]:,.4s}"
                 "<br>Previous 20D avg: %{customdata[1]:,.4s}"
                 "<br>Daily return: %{customdata[2]:+.2%}<extra></extra>"
@@ -247,7 +251,7 @@ def build_volume_liquidity_figure(
     summary = [
         ("LATEST VOLUME", format_quantity(result.metrics.get("latest_volume"))),
         ("20D AVG", format_quantity(result.metrics.get("volume_ma_20"))),
-        ("LATEST RVOL", format_multiple(result.metrics.get("latest_relative_volume_20"))),
+        ({"preliminary": "PRELIMINARY RVOL", "completed": "COMPLETED RVOL", "unverified": "RVOL UNVERIFIED"}.get(rvol_assessment.status, "RVOL UNAVAILABLE"), rvol_assessment.headline[1]),
         ("LATEST DOLLAR VOL", format_money(result.metrics.get("latest_dollar_volume"), currency, compact=True)),
         ("HIGHEST RVOL", format_multiple(result.metrics.get("highest_relative_volume_20"))),
         ("HIGHEST DOLLAR VOL", format_money(result.metrics.get("highest_dollar_volume"), currency, compact=True)),
@@ -266,6 +270,7 @@ def build_volume_liquidity_figure(
         text=(
             "<b>Methodology:</b> Historical raw share volume can be affected by stock splits because the number of outstanding and traded shares changes mechanically. "
             "Dollar Volume (raw close × share volume) and Relative Volume (current volume ÷ previous 20-session average) provide complementary measures across share structures."
+            " Latest-bar status is based on the exchange schedule and the original provider retrieval time; same-day post-close data remain unverified."
         ),
     )
     fig.add_annotation(

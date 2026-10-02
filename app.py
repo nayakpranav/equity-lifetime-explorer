@@ -23,6 +23,7 @@ from src.financial_models import FundamentalsResult
 from src.providers.yahoo import clean_ticker
 from src.research_service import run_fundamentals_analysis
 from src.service import run_equity_analysis
+from src.session_status import assess_latest_rvol
 from src.workspaces.fundamentals import render_fundamentals_workspace
 from src.ui import (
     active_theme_type,
@@ -109,6 +110,8 @@ def render_price_workspace(result, controls: dict) -> None:
         show_drawdown=controls["show_drawdown"],
     )
     st.plotly_chart(figure, width="stretch", theme=None, config={"displaylogo": False, "responsive": True})
+    if controls["show_volume"]:
+        st.caption(f"Latest volume context: {assess_latest_rvol(result).detail}")
     factor = result.metrics["cumulative_share_multiplier"]
     if abs(factor - 1.0) < 1e-10:
         ownership = "No included share-changing action alters the earliest-observation share basis."
@@ -130,6 +133,7 @@ def render_volume_workspace(result, theme: str) -> None:
     )
     mode = "dollar" if mode_label == "Dollar Volume" else "shares"
     st.markdown(kpi_grid_html(volume_kpi_cards(result)), unsafe_allow_html=True)
+    st.caption(assess_latest_rvol(result).detail)
     figure = build_volume_chart(result, theme=theme, mode=mode)
     st.plotly_chart(figure, width="stretch", theme=None, config={"displaylogo": False, "responsive": True})
     st.markdown("#### Notable Volume Events")
@@ -186,8 +190,9 @@ def render_audit_sections(result) -> None:
             "source", "confidence", "included_in_reconstruction", "notes",
         ]
         st.dataframe(result.actions[columns], width="stretch", hide_index=True)
-    with st.expander("Data Quality & Validation", expanded=False):
-        st.markdown(f"**Overall confidence: {result.provenance.validation_status}**")
+    with st.expander("Market Data Quality & Validation", expanded=False):
+        st.markdown(f"**Market-data reconstruction confidence: {result.provenance.validation_status}**")
+        st.caption("This assessment does not score SEC financial coverage or statement reconciliation.")
         st.dataframe(result.validation, width="stretch", hide_index=True)
     with st.expander("Data & Methodology", expanded=False):
         provenance = result.provenance
@@ -200,7 +205,7 @@ def render_audit_sections(result) -> None:
                 ("Observations", f"{len(result.prices):,}"),
                 ("Corporate-action records", f"{len(result.actions):,}"),
                 ("Positive dividend events", f"{result.dividend_metrics.get('dividend_event_count', 0):,}"),
-                ("Data-quality confidence", provenance.validation_status),
+                ("Market data-quality confidence", provenance.validation_status),
             ],
             columns=["Field", "Value"],
         )
@@ -232,6 +237,7 @@ def _export_context(result, controls: dict, fundamentals=None) -> tuple:
         fundamentals.status if fundamentals is not None else None,
         fundamentals.source_sha256 if fundamentals is not None else None,
         fundamentals.retrieved_at_utc if fundamentals is not None else None,
+        bool(st.session_state.get("financial_price_overlay", False)),
     )
 
 
@@ -300,6 +306,7 @@ def render_download_center(result, controls: dict, fundamentals=None) -> None:
                         portable_html=portable,
                         price_options=price_options,
                         fundamentals=fundamentals,
+                        financial_price_overlay=bool(st.session_state.get("financial_price_overlay", False)),
                     )
                     st.session_state.prepared_export_context = _export_context(result, controls, fundamentals)
             except Exception:
@@ -321,6 +328,7 @@ def render_download_center(result, controls: dict, fundamentals=None) -> None:
                     portable_html=portable,
                     price_options=price_options,
                     fundamentals=fundamentals,
+                    financial_price_overlay=bool(st.session_state.get("financial_price_overlay", False)),
                 )
                 st.session_state.prepared_export_context = _export_context(result, controls, fundamentals)
         except Exception:
@@ -445,7 +453,7 @@ with st.container(border=True):
         if financial_result is None:
             st.info("Run ANALYZE to check SEC Financial Fundamentals availability.")
         else:
-            render_fundamentals_workspace(financial_result, theme=controls["theme"])
+            render_fundamentals_workspace(financial_result, theme=controls["theme"], market=result)
 
 render_audit_sections(result)
 st.caption(

@@ -9,7 +9,9 @@ import pandas as pd
 from .charts.fundamentals import build_fundamentals_figures
 from .config import THEMES
 from .financial_models import FundamentalsResult
+from .models import AnalysisResult
 from .financial_ui import fundamentals_kpi_cards
+from .report_tables import report_table_html
 
 
 def _safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -72,14 +74,17 @@ def financial_quality_csv(result: FundamentalsResult) -> bytes:
     return financial_csv(result.quality)
 
 
-def fundamentals_html(result: FundamentalsResult, *, theme: str = "dark", portable: bool = False) -> bytes:
+def fundamentals_html(
+    result: FundamentalsResult, *, theme: str = "dark", portable: bool = False,
+    market: AnalysisResult | None = None, price_overlay: bool = False,
+) -> bytes:
     if not result.available:
         raise ValueError("Financial Fundamentals report is unavailable")
     if theme not in THEMES:
         raise ValueError("theme must be dark or light")
     identity = result.identity
     palette = THEMES[theme]
-    figures = build_fundamentals_figures(result, theme=theme)
+    figures = build_fundamentals_figures(result, theme=theme, market=market, price_overlay=price_overlay)
     include_js: str | bool = True if portable else "cdn"
     chart_sections = []
     for index, (heading, figure) in enumerate(figures.items()):
@@ -94,16 +99,24 @@ def fundamentals_html(result: FundamentalsResult, *, theme: str = "dark", portab
         f"<strong>{html.escape(card.value)}</strong></div>"
         for card in fundamentals_kpi_cards(result)
     )
-    annual_table = result.annual[[column for column in (
+    annual_columns = [column for column in (
         "fiscal_year", "period_end", "currency", "revenue", "operating_income",
         "net_income_parent", "eps_basic", "eps_diluted", "ocf", "capex_ppe",
         "productive_asset_spending", "fcf", "eps_basic_yoy", "eps_diluted_yoy",
         "eps_basic_cagr_3y", "eps_diluted_cagr_3y", "roe", "roe_status",
         "roce", "roce_status", "cash_equivalents",
         "reported_long_term_debt", "fcf_status", "net_debt_status",
-    ) if column in result.annual]].to_html(index=False, escape=True, classes="data-table", border=0)
-    coverage_table = result.coverage.to_html(index=False, escape=True, classes="data-table", border=0)
-    quality_table = result.quality.head(50).to_html(index=False, escape=True, classes="data-table", border=0)
+    ) if column in result.annual]
+    annual_table = report_table_html(result.annual, identity.reporting_currency, columns=annual_columns)
+    coverage_table = report_table_html(result.coverage, identity.reporting_currency)
+    quality_table = report_table_html(result.quality.head(50), identity.reporting_currency)
+    lineage = result.observations
+    if "period_end" in lineage:
+        lineage = lineage.sort_values("period_end").tail(20)
+    lineage_table = report_table_html(lineage, identity.reporting_currency, columns=[
+        "normalized_concept", "period_end", "filing_date", "acceptance_timestamp_utc",
+        "revision_status", "quality_status",
+    ])
     page = "#060913" if theme == "dark" else "#F4F7FC"
     panel = "#0A1326" if theme == "dark" else "#FFFFFF"
     border = "#263757" if theme == "dark" else "#C8D5E8"
@@ -119,9 +132,9 @@ h1{{font-size:clamp(27px,4vw,42px);margin:4px 0}}h2{{font-size:21px}}p,small{{co
 .table-wrap{{overflow:auto}}table{{border-collapse:collapse;width:100%;font-size:12px}}th,td{{padding:8px;border-bottom:1px solid {border};text-align:right;white-space:nowrap}}th:first-child,td:first-child{{text-align:left}}
 </style></head><body><main><header class='hero'><small>EQUITY LIFETIME EXPLORER · SEC EDGAR</small>
 <h1>{html.escape(identity.issuer_name)}</h1><p>Financial Fundamentals · {html.escape(identity.ticker)} · CIK {identity.cik} · {identity.reporting_currency} · {html.escape(result.latest_view)}</p></header>
-<div class='cards'>{cards}</div>{''.join(chart_sections)}
+<div class='cards'>{cards}</div>{("<section class='panel'><p>Optional share-price overlay: split-adjusted current-share price, excluding dividend reinvestment, aligned to the latest close on or before each fiscal-period end (within seven calendar days). Financial results were disclosed later; this is not an as-known-at-date comparison.</p></section>" if price_overlay else "")}{''.join(chart_sections)}
 <section class='panel'><h2>Annual Statement Summary</h2><div class='table-wrap'>{annual_table}</div></section>
-<section class='panel'><h2>Coverage and Data Quality</h2><div class='table-wrap'>{coverage_table}</div><h2>Quality Flags</h2><div class='table-wrap'>{quality_table}</div></section>
+<section class='panel'><h2>Financial Data Quality</h2><h3>SEC Concept Coverage</h3><div class='table-wrap'>{coverage_table}</div><h3>Financial Quality Flags</h3><div class='table-wrap'>{quality_table}</div><h3>Recent Filing &amp; Acceptance Lineage</h3><div class='table-wrap'>{lineage_table}</div></section>
 <section class='panel'><h2>Methodology and Provenance</h2><p>Company Facts supplies standard entity-wide reported facts. This is latest-disclosed history and may include later revisions. It is not point-in-time historical valuation data. The SEC NetIncomeLoss tag means net income attributable to the parent. Monetary quarterly cash flows are reconstructed only from compatible cumulative filings; quarterly EPS is never subtracted. Reported basic and diluted EPS retain their original, unnormalized share basis. EPS growth uses same-filing comparatives, and multiyear growth chains only complete comparable pairs. ROE uses parent income divided by average parent equity. ROCE uses operating income as an EBIT proxy divided by average (assets less current liabilities), when adjacent periods are compatible. Missing values are unavailable, not zero. PPE cash payments are positive outflows; ordinary FCF equals OCF less those payments. Acquisitions are excluded. NVIDIA's productive-asset spending includes intangible assets and is not silently substituted for PPE. Reported long-term debt is not a verified complete debt total, so net debt is unavailable.</p>
 <p>Source: SEC EDGAR Company Facts and submissions · Retrieved {html.escape(result.retrieved_at_utc or '')} · Mapping {html.escape(result.mapping_version)} · Source SHA-256 {html.escape(result.source_sha256 or '')}</p>
 <p>For informational and research purposes only. No historical valuation multiples are calculated in this release.</p></section>

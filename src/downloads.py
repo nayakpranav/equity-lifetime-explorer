@@ -88,6 +88,7 @@ def prepare_selected_download(
     portable_html: bool = False,
     price_options: dict | None = None,
     fundamentals: FundamentalsResult | None = None,
+    financial_price_overlay: bool = False,
     stamp: date | None = None,
 ) -> PreparedDownload:
     """Build one direct file or one ZIP containing only the chosen exports."""
@@ -100,6 +101,8 @@ def prepare_selected_download(
     }
     if fundamentals is not None:
         export_options["fundamentals"] = fundamentals
+    if financial_price_overlay:
+        export_options["financial_price_overlay"] = True
     if stamp is not None:
         export_options["stamp"] = stamp
     files = export_bundle(result, selections, **export_options)
@@ -124,6 +127,7 @@ def prepare_complete_package(
     portable_html: bool = False,
     price_options: dict | None = None,
     fundamentals: FundamentalsResult | None = None,
+    financial_price_overlay: bool = False,
     stamp: date | None = None,
 ) -> PreparedDownload:
     """Build the complete applicable research package on demand."""
@@ -135,6 +139,8 @@ def prepare_complete_package(
     }
     if fundamentals is not None:
         export_options["fundamentals"] = fundamentals
+    if financial_price_overlay:
+        export_options["financial_price_overlay"] = True
     if stamp is not None:
         export_options["stamp"] = stamp
     files = export_bundle(result, complete_export_keys(result, fundamentals), **export_options)
