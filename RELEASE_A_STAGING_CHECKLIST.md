@@ -15,10 +15,15 @@ or deploy Release B.
 | Entrypoint | `app.py` at repository root |
 | Dependencies | Root `requirements.txt` |
 | Theme/configuration | Root `.streamlit/config.toml` |
-| Suggested staging subdomain | `equity-lifetime-explorer-staging`, if available |
+| Separate review app | `https://equity-lifetime-explorer-release-a-review.streamlit.app/` |
 | Python | 3.11 |
 
-Configure `SEC_USER_AGENT` **only in the staging app's private Secrets
+The separate review app has been created from the feature branch; the original
+`equity-lifetime-explorer.streamlit.app` production app remains on `main`.
+Community Cloud did not permit a custom subdomain containing `staging`, hence
+the distinct `release-a-review` URL above.
+
+Configure `SEC_USER_AGENT` **only in the review app's private Secrets
 settings**, using a truthful application name and operator contact. The app
 also reads a process environment variable of that name for local checks. Do
 not put contact information in Git, a public URL, a screenshot or a test log.
