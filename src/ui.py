@@ -10,6 +10,7 @@ import pandas as pd
 
 from .formatting import format_money, format_multiple, format_percent, format_quantity
 from .models import AnalysisResult
+from .session_status import assess_latest_rvol
 
 
 @dataclass(frozen=True)
@@ -73,10 +74,11 @@ def lifetime_kpi_cards(result: AnalysisResult) -> list[KpiCard]:
 
 def volume_kpi_cards(result: AnalysisResult) -> list[KpiCard]:
     values = result.metrics
+    rvol = assess_latest_rvol(result)
     return [
         KpiCard("Latest volume", format_quantity(values.get("latest_volume")), "blue"),
         KpiCard("Previous 20D average", format_quantity(values.get("volume_ma_20")), "blue"),
-        KpiCard("Latest RVOL", format_multiple(values.get("latest_relative_volume_20")), "violet"),
+        KpiCard(*rvol.headline, "violet"),
         KpiCard(
             "Latest dollar volume",
             format_money(values.get("latest_dollar_volume"), result.metadata.currency, compact=True),
