@@ -14,6 +14,11 @@ import plotly.graph_objects as go
 
 from .charts import build_dividend_chart, build_lifetime_chart, build_volume_chart
 from .config import THEMES
+from .financial_exports import (
+    annual_financial_csv, financial_provenance_csv, financial_ratios_csv,
+    fundamentals_html, quarterly_financial_csv,
+)
+from .financial_models import FundamentalsResult
 from .formatting import format_money, format_multiple, format_percent
 from .models import AnalysisResult
 
@@ -182,6 +187,7 @@ def combined_research_html(
     theme: str = "dark",
     portable: bool = False,
     price_options: dict | None = None,
+    fundamentals: FundamentalsResult | None = None,
 ) -> bytes:
     """Compose one navigable research report with a single Plotly.js payload."""
     if theme not in THEMES:
@@ -224,6 +230,38 @@ def combined_research_html(
         dividend_cards = f"<div class='cards'>{_report_cards(_kpi_cards(result, 'dividend'))}</div>"
         dividend_table = "<h3>Annual Dividend Summary</h3>" + _report_table(
             result.annual_dividends.tail(15)
+        )
+
+    if fundamentals is not None and fundamentals.available:
+        from .charts.fundamentals import build_fundamentals_figures
+        from .financial_ui import fundamentals_kpi_cards
+
+        financial_cards = "<div class='cards'>" + _report_cards([
+            (card.label, card.value) for card in fundamentals_kpi_cards(fundamentals)
+        ]) + "</div>"
+        financial_charts = "".join(
+            f"<h3>{html.escape(heading)}</h3><div class='chart'>"
+            + figure.to_html(full_html=False, include_plotlyjs=False, config=chart_config)
+            + "</div>"
+            for heading, figure in build_fundamentals_figures(fundamentals, theme=theme).items()
+        )
+        financial_content = (
+            financial_cards + financial_charts
+            + "<h3>Annual SEC Statement Summary</h3>" + _report_table(fundamentals.annual.tail(15), [
+                "fiscal_year", "period_end", "currency", "revenue", "operating_income",
+                "net_income_consolidated", "ocf", "capex_ppe", "fcf", "fcf_status",
+            ])
+            + "<h3>Concept Coverage</h3>" + _report_table(fundamentals.coverage)
+            + "<div class='section-copy'>Latest-disclosed SEC history may contain later revisions. "
+            "PPE purchases are positive outflows; ordinary FCF is OCF less PPE purchases. "
+            "Reported long-term debt is partial, so net debt is withheld. "
+            "This is not a point-in-time historical valuation series.</div>"
+        )
+    else:
+        reason = fundamentals.reason if fundamentals is not None else "SEC financial analysis has not been run for this result."
+        financial_content = (
+            "<div class='empty-state'><strong>Financial Fundamentals unavailable.</strong>"
+            f"<span>{html.escape(reason)}</span></div>"
         )
 
     factor = result.metrics.get("cumulative_share_multiplier")
@@ -295,12 +333,13 @@ main{{max-width:1500px;margin:auto;padding:28px clamp(16px,4vw,58px) 60px}}.hero
 .table-wrap{{overflow:auto;border:1px solid var(--line);border-radius:14px;margin-top:12px}}.data-table{{width:100%;border-collapse:collapse;font-size:12px}}.data-table th,.data-table td{{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}}.data-table th{{color:var(--muted);background:{card_background};position:sticky;top:0}}.data-table th:first-child,.data-table td:first-child{{text-align:left}}
 .method-copy{{line-height:1.65}}footer{{padding:28px 4px 0;font-size:12px}}@media(max-width:760px){{.report-section{{padding:16px}}.topnav{{padding:9px 12px}}.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.card strong{{font-size:17px}}}}
 </style></head><body>
-<nav class='topnav' aria-label='Report sections'><a href='#overview'>Overview</a><a href='#price'>Price &amp; Ownership</a><a href='#volume'>Volume &amp; Liquidity</a><a href='#dividends'>Dividends &amp; Total Return</a><a href='#actions'>Corporate Actions</a><a href='#validation'>Data Quality</a><a href='#methodology'>Methodology</a></nav>
+<nav class='topnav' aria-label='Report sections'><a href='#overview'>Overview</a><a href='#price'>Price &amp; Ownership</a><a href='#volume'>Volume &amp; Liquidity</a><a href='#dividends'>Dividends &amp; Total Return</a><a href='#fundamentals'>Financial Fundamentals</a><a href='#actions'>Corporate Actions</a><a href='#validation'>Data Quality</a><a href='#methodology'>Methodology</a></nav>
 <main><header class='hero' id='overview'><div class='eyebrow'>Equity Lifetime Explorer</div><h1>{html.escape(metadata.name or metadata.ticker)}</h1><div class='meta'>{html.escape(metadata.ticker)} · {html.escape(metadata.exchange)} · {html.escape(metadata.currency)}{(' · ' + html.escape(metadata.sector)) if metadata.sector else ''} · {len(result.prices):,} observations</div></header>
 <section class='cards'>{_report_cards(_kpi_cards(result, 'lifetime'))}</section>
 <section class='report-section' id='price'><h2>Price &amp; Ownership</h2><div class='section-copy'>Raw market quotations, provider-adjusted history and the mechanical ownership-equivalent reconstruction.</div><div class='chart'>{price_chart}</div><div class='callout'><strong>Ownership-equivalent interpretation</strong><span>{html.escape(ownership)} This is a mechanical reconstruction, not a counterfactual market-price forecast.</span></div></section>
 <section class='report-section' id='volume'><h2>Volume &amp; Liquidity</h2><div class='section-copy'>Long-run share volume, dollar volume, relative activity and unusual participation.</div><div class='cards'>{_report_cards(_kpi_cards(result, 'volume'))}</div><div class='chart'>{volume_chart}</div><h3>Notable Volume Events</h3>{_report_table(volume_events, volume_columns)}<div class='section-copy'>High volume indicates elevated participation; it does not identify participant classes or establish accumulation, distribution or causation.</div></section>
 <section class='report-section' id='dividends'><h2>Dividends &amp; Total Return</h2><div class='section-copy'>Provider-reported dividends, completed-year growth, historical yield and total-return context.</div>{dividend_cards}<div class='chart'>{dividend_chart}</div>{dividend_table}</section>
+<section class='report-section' id='fundamentals'><h2>Financial Fundamentals</h2><div class='section-copy'>SEC-reported operating performance, cash generation and financial position.</div>{financial_content}</section>
 <section class='report-section' id='actions'><h2>Corporate Actions</h2><div class='section-copy'>Provider and researched share-changing events used by the existing validated reconstruction.</div>{_report_table(result.actions, action_columns)}</section>
 <section class='report-section' id='validation'><h2>Data Quality</h2><div class='section-copy'>Overall confidence: <strong>{html.escape(provenance.validation_status)}</strong></div>{_report_table(result.validation)}</section>
 <section class='report-section' id='methodology'><h2>Methodology &amp; Provenance</h2>{_report_table(provenance_frame)}<h3>Methodological notes</h3><div class='method-copy'>{methodology}</div>{('<h3>Provider notes</h3><ul>' + notes + '</ul>') if notes else ''}<div class='callout'><strong>Limitations</strong><span>Market data may be delayed, incomplete or retrospectively adjusted. Mechanical no-split values are ownership-equivalent reconstructions and are not estimates of prices that would necessarily have prevailed without corporate actions. {portable_note}</span></div></section>
@@ -340,6 +379,7 @@ def export_bundle(
     theme: str = "dark",
     portable_html: bool = False,
     price_options: dict | None = None,
+    fundamentals: FundamentalsResult | None = None,
     stamp: date | None = None,
 ) -> dict[str, bytes]:
     """Generate only selected exports; no persistent filesystem is required."""
@@ -348,7 +388,7 @@ def export_bundle(
     builders: dict[str, tuple[str, Callable[[], bytes]]] = {
         "lifetime_html": (f"{ticker}_lifetime_chart_{report_date}.html", lambda: report_html(result, "lifetime", theme=theme, portable=portable_html, price_options=price_options)),
         "volume_html": (f"{ticker}_volume_liquidity_{report_date}.html", lambda: report_html(result, "volume", theme=theme, portable=portable_html)),
-        "combined_html": (f"{ticker}_complete_research_report_{report_date}.html", lambda: combined_research_html(result, theme=theme, portable=portable_html, price_options=price_options)),
+        "combined_html": (f"{ticker}_complete_research_report_{report_date}.html", lambda: combined_research_html(result, theme=theme, portable=portable_html, price_options=price_options, fundamentals=fundamentals)),
         "history_csv": (f"{ticker}_lifetime_history_{report_date}.csv", lambda: historical_csv(result)),
         "actions_csv": (f"{ticker}_corporate_actions_{report_date}.csv", lambda: actions_csv(result)),
         "validation_csv": (f"{ticker}_validation_{report_date}.csv", lambda: validation_csv(result)),
@@ -358,6 +398,15 @@ def export_bundle(
             "dividend_html": (f"{ticker}_dividend_total_return_{report_date}.html", lambda: report_html(result, "dividend", theme=theme, portable=portable_html)),
             "dividend_csv": (f"{ticker}_dividend_summary_{report_date}.csv", lambda: dividend_summary_csv(result)),
         })
+    if fundamentals is not None and fundamentals.available:
+        builders.update({
+            "fundamentals_html": (f"{ticker}_financial_fundamentals_{report_date}.html", lambda: fundamentals_html(fundamentals, theme=theme, portable=portable_html)),
+            "financial_annual_csv": (f"{ticker}_sec_annual_financials_{report_date}.csv", lambda: annual_financial_csv(fundamentals)),
+            "financial_ratios_csv": (f"{ticker}_financial_ratios_{report_date}.csv", lambda: financial_ratios_csv(fundamentals)),
+            "financial_provenance_csv": (f"{ticker}_sec_financial_provenance_{report_date}.csv", lambda: financial_provenance_csv(fundamentals)),
+        })
+        if not fundamentals.quarterly.empty:
+            builders["financial_quarterly_csv"] = (f"{ticker}_sec_quarterly_financials_{report_date}.csv", lambda: quarterly_financial_csv(fundamentals))
     output: dict[str, bytes] = {}
     for key in selections:
         if key not in builders:

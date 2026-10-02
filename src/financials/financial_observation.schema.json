@@ -1,0 +1,489 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:equity-lifetime-explorer:financial-observation:1.0.0",
+  "title": "Proposed canonical financial observation",
+  "description": "Release A canonical observation contract. Structural validation does not replace fiscal, semantic, currency, vintage or availability checks.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "observation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issuer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "security_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ticker": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "enum": [
+        "SEC_EDGAR",
+        "YAHOO",
+        "FMP",
+        "EODHD",
+        "SYNTHETIC",
+        "DERIVED"
+      ]
+    },
+    "taxonomy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provider_concept": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "normalized_concept": {
+      "type": "string",
+      "minLength": 1
+    },
+    "statement_type": {
+      "enum": [
+        "income",
+        "cash_flow",
+        "balance_sheet",
+        "share_data",
+        "derived"
+      ]
+    },
+    "mapping_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_type": {
+      "enum": [
+        "duration",
+        "instant",
+        "unknown"
+      ]
+    },
+    "context_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dimensions_status": {
+      "enum": [
+        "verified_entity_wide",
+        "verified_dimensions",
+        "omitted_by_provider",
+        "unknown"
+      ]
+    },
+    "dimensions": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "period_start": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "fiscal_year": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1900,
+      "maximum": 2200
+    },
+    "fiscal_quarter": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 4
+    },
+    "raw_fiscal_year": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "raw_fiscal_period": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "period_type": {
+      "enum": [
+        "annual",
+        "quarter",
+        "ytd",
+        "instant",
+        "transition",
+        "unknown"
+      ]
+    },
+    "reporting_frequency": {
+      "enum": [
+        "annual",
+        "quarterly",
+        "other",
+        "unknown"
+      ]
+    },
+    "filing_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "acceptance_timestamp_utc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "public_availability_timestamp_utc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "availability_session": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "availability_precision": {
+      "enum": [
+        "timestamp",
+        "date",
+        "unknown"
+      ]
+    },
+    "availability_policy": {
+      "type": "string"
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Z]{3}$"
+    },
+    "unit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "value": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    },
+    "original_value": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    },
+    "scale": {
+      "type": "integer",
+      "description": "Decimal power applied to original value when units require normalization; XBRL API val normally already normalized, so 0."
+    },
+    "reported_decimals": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sign_convention": {
+      "enum": [
+        "as_reported",
+        "positive_outflow",
+        "negative_outflow",
+        "derived",
+        "unknown"
+      ]
+    },
+    "accession": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]{10}-[0-9]{2}-[0-9]{6}$"
+    },
+    "form": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "source_record_locator": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "retrieved_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "filing_status": {
+      "enum": [
+        "original",
+        "amended",
+        "unknown",
+        "not_applicable"
+      ]
+    },
+    "revision_status": {
+      "enum": [
+        "unchanged_repeat",
+        "revision_candidate",
+        "restated_verified",
+        "original_verified",
+        "unknown",
+        "not_applicable"
+      ]
+    },
+    "vintage_role": {
+      "enum": [
+        "reported",
+        "derived"
+      ]
+    },
+    "share_class": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "share_basis_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "share_basis_status": {
+      "enum": [
+        "verified",
+        "unknown",
+        "not_applicable"
+      ]
+    },
+    "share_basis_evidence": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "quality_status": {
+      "enum": [
+        "valid",
+        "warning",
+        "invalid",
+        "unavailable",
+        "unsupported"
+      ]
+    },
+    "quality_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "derivation": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "available_from_rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "expression",
+        "available_from_rule"
+      ],
+      "additionalProperties": false
+    },
+    "parent_observation_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "methodology_version": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "observation_id",
+    "issuer_id",
+    "security_id",
+    "ticker",
+    "provider",
+    "taxonomy",
+    "provider_concept",
+    "normalized_concept",
+    "statement_type",
+    "mapping_version",
+    "context_type",
+    "context_id",
+    "dimensions_status",
+    "dimensions",
+    "period_start",
+    "period_end",
+    "fiscal_year",
+    "fiscal_quarter",
+    "raw_fiscal_year",
+    "raw_fiscal_period",
+    "period_type",
+    "reporting_frequency",
+    "filing_date",
+    "acceptance_timestamp_utc",
+    "public_availability_timestamp_utc",
+    "availability_session",
+    "availability_precision",
+    "availability_policy",
+    "currency",
+    "unit",
+    "value",
+    "original_value",
+    "scale",
+    "reported_decimals",
+    "sign_convention",
+    "accession",
+    "form",
+    "source_url",
+    "source_record_locator",
+    "source_sha256",
+    "retrieved_at_utc",
+    "filing_status",
+    "revision_status",
+    "vintage_role",
+    "share_class",
+    "share_basis_date",
+    "share_basis_status",
+    "share_basis_evidence",
+    "quality_status",
+    "quality_flags",
+    "derivation",
+    "parent_observation_ids",
+    "methodology_version"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "context_type": {
+            "const": "instant"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "period_start": {
+            "type": "null"
+          },
+          "period_type": {
+            "const": "instant"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "context_type": {
+            "const": "duration"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "period_start": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "vintage_role": {
+            "const": "derived"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parent_observation_ids": {
+            "minItems": 1
+          },
+          "derivation": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
+}

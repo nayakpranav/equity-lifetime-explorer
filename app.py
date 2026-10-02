@@ -15,11 +15,15 @@ from src.downloads import (
     REPORT_EXPORTS,
     default_export_selection,
     export_is_available,
+    export_unavailability_reason,
     prepare_complete_package,
     prepare_selected_download,
 )
+from src.financial_models import FundamentalsResult
 from src.providers.yahoo import clean_ticker
+from src.research_service import run_fundamentals_analysis
 from src.service import run_equity_analysis
+from src.workspaces.fundamentals import render_fundamentals_workspace
 from src.ui import (
     active_theme_type,
     company_hero_html,
@@ -61,6 +65,18 @@ def analyze(ticker: str, force_refresh: bool):
         cached_analysis.clear(symbol)
         return run_equity_analysis(symbol, force_refresh=True, cache_hours=12.0)
     return cached_analysis(symbol)
+
+
+@st.cache_data(ttl="24h", max_entries=12, show_spinner=False)
+def cached_fundamentals(metadata):
+    return run_fundamentals_analysis(metadata)
+
+
+def analyze_fundamentals(metadata, force_refresh: bool):
+    if force_refresh:
+        cached_fundamentals.clear(metadata)
+        return run_fundamentals_analysis(metadata, force_refresh=True)
+    return cached_fundamentals(metadata)
 
 
 def render_company_header(result) -> None:
@@ -196,43 +212,46 @@ def _price_export_options(controls: dict) -> dict:
     }
 
 
-def _export_context(result, controls: dict) -> tuple:
+def _export_context(result, controls: dict, fundamentals=None) -> tuple:
     price_options = _price_export_options(controls)
     return (
         result.ticker,
         controls["theme"],
         tuple(sorted(price_options.items())),
+        fundamentals.status if fundamentals is not None else None,
+        fundamentals.source_sha256 if fundamentals is not None else None,
+        fundamentals.retrieved_at_utc if fundamentals is not None else None,
     )
 
 
 @st.dialog("Download Center", width="large")
-def render_download_center(result, controls: dict) -> None:
+def render_download_center(result, controls: dict, fundamentals=None) -> None:
     st.caption("Choose focused reports or research data. Nothing is generated until you request it.")
-    defaults = default_export_selection(result)
+    defaults = default_export_selection(result, fundamentals)
     with st.form("download_selection_form", border=False):
         report_column, data_column = st.columns(2)
         choices: dict[str, bool] = {}
         with report_column:
             st.markdown("#### Reports")
             for key, label in REPORT_EXPORTS:
-                available = export_is_available(result, key)
+                available = export_is_available(result, key, fundamentals)
                 choices[key] = st.checkbox(
                     label,
                     value=defaults[key],
                     disabled=not available,
                     key=f"export_choice_{key}",
-                    help=None if available else "Unavailable because this security has no provider-reported cash-dividend history.",
+                    help=export_unavailability_reason(result, key, fundamentals),
                 )
         with data_column:
             st.markdown("#### Data")
             for key, label in DATA_EXPORTS:
-                available = export_is_available(result, key)
+                available = export_is_available(result, key, fundamentals)
                 choices[key] = st.checkbox(
                     label,
                     value=defaults[key],
                     disabled=not available,
                     key=f"export_choice_{key}",
-                    help=None if available else "Unavailable because this security has no provider-reported cash-dividend history.",
+                    help=export_unavailability_reason(result, key, fundamentals),
                 )
         st.markdown("#### Options")
         portable = st.checkbox(
@@ -257,7 +276,7 @@ def render_download_center(result, controls: dict) -> None:
 
     price_options = _price_export_options(controls)
     if prepare_selected:
-        selected = [key for key, enabled in choices.items() if enabled and export_is_available(result, key)]
+        selected = [key for key, enabled in choices.items() if enabled and export_is_available(result, key, fundamentals)]
         if not selected:
             st.warning("Select at least one report or data export.")
         else:
@@ -269,8 +288,9 @@ def render_download_center(result, controls: dict) -> None:
                         theme=controls["theme"],
                         portable_html=portable,
                         price_options=price_options,
+                        fundamentals=fundamentals,
                     )
-                    st.session_state.prepared_export_context = _export_context(result, controls)
+                    st.session_state.prepared_export_context = _export_context(result, controls, fundamentals)
             except Exception:
                 logging.getLogger("equity_lifetime_explorer").exception(
                     "Selected export generation failed for %s", result.ticker
@@ -289,8 +309,9 @@ def render_download_center(result, controls: dict) -> None:
                     theme=controls["theme"],
                     portable_html=portable,
                     price_options=price_options,
+                    fundamentals=fundamentals,
                 )
-                st.session_state.prepared_export_context = _export_context(result, controls)
+                st.session_state.prepared_export_context = _export_context(result, controls, fundamentals)
         except Exception:
             logging.getLogger("equity_lifetime_explorer").exception(
                 "Complete export generation failed for %s", result.ticker
@@ -302,7 +323,7 @@ def render_download_center(result, controls: dict) -> None:
             )
 
     prepared = st.session_state.get("prepared_download")
-    if st.session_state.get("prepared_export_context") != _export_context(result, controls):
+    if st.session_state.get("prepared_export_context") != _export_context(result, controls, fundamentals):
         prepared = None
     if prepared is not None:
         st.success(prepared.status)
@@ -319,7 +340,7 @@ def render_download_center(result, controls: dict) -> None:
 
 with st.sidebar:
     st.title("Equity Lifetime Explorer")
-    st.caption("Price History · Corporate Actions · Liquidity · Dividends")
+    st.caption("Price History · Corporate Actions · Liquidity · Dividends · SEC Financials")
     ticker = st.text_input("Ticker", value="KO", max_chars=25, placeholder="NVDA, SAP.DE, RELIANCE.NS")
     st.caption("Examples: NVDA · AAPL · MSFT · GOOG · AMZN · SAP.DE · ASML · RELIANCE.NS")
     price_label = st.radio(
@@ -351,14 +372,26 @@ controls = {
 
 if "analysis_result" not in st.session_state:
     st.session_state.analysis_result = None
+if "financial_result" not in st.session_state:
+    st.session_state.financial_result = None
 if analyze_clicked:
     try:
         clean_ticker(ticker)
         with st.spinner("Retrieving and analyzing maximum available market history…", show_time=True):
             result = analyze(ticker, force_refresh)
             st.session_state.analysis_result = result
+            st.session_state.financial_result = None
             st.session_state.prepared_download = None
             st.session_state.prepared_export_context = None
+        with st.spinner("Checking SEC Financial Fundamentals…"):
+            try:
+                st.session_state.financial_result = analyze_fundamentals(result.metadata, force_refresh)
+            except Exception:
+                logging.getLogger("equity_lifetime_explorer").exception("Financial Fundamentals check failed")
+                st.session_state.financial_result = FundamentalsResult(
+                    result.metadata.ticker, "FINANCIAL_ERROR",
+                    "Financial Fundamentals are temporarily unavailable; the market analysis remains intact.",
+                )
         st.toast(f"{result.metadata.ticker} analysis complete", icon="✅")
     except ValueError as exc:
         st.error(f"Invalid ticker: {exc}")
@@ -369,6 +402,7 @@ if analyze_clicked:
         st.error("Market data could not be retrieved or processed at this time. Please retry shortly.")
 
 result = st.session_state.analysis_result
+financial_result = st.session_state.financial_result
 if result is None:
     st.title("Equity Lifetime Explorer")
     st.markdown("### Long-horizon price, ownership, liquidity, and dividend research")
@@ -381,22 +415,27 @@ navigation, downloads = st.columns([5.4, 1], vertical_alignment="bottom")
 with navigation:
     workspace = st.segmented_control(
         "Analytical workspace",
-        ["Price & Ownership", "Volume & Liquidity", "Dividends & Total Return"],
+        ["Price & Ownership", "Volume & Liquidity", "Dividends & Total Return", "Financial Fundamentals"],
         default="Price & Ownership",
         key="workspace",
         width="stretch",
     )
 with downloads:
     if st.button("Downloads", icon=":material/download:", width="stretch"):
-        render_download_center(result, controls)
+        render_download_center(result, controls, financial_result)
 
 with st.container(border=True):
     if workspace == "Price & Ownership":
         render_price_workspace(result, controls)
     elif workspace == "Volume & Liquidity":
         render_volume_workspace(result, controls["theme"])
-    else:
+    elif workspace == "Dividends & Total Return":
         render_dividend_workspace(result, controls["theme"])
+    else:
+        if financial_result is None:
+            st.info("Run ANALYZE to check SEC Financial Fundamentals availability.")
+        else:
+            render_fundamentals_workspace(financial_result, theme=controls["theme"])
 
 render_audit_sections(result)
 st.caption(
