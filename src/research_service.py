@@ -8,8 +8,10 @@ import pandas as pd
 
 from .financial_models import FundamentalsResult, ResearchResult
 from .financials.analytics import build_period_table, calculate_fundamentals
+from .financials.capital_efficiency import calculate_capital_efficiency
 from .financials.concepts import PILOT_CIKS, mappings_for
 from .financials.normalization import normalize_sec_facts
+from .financials.eps import add_eps_growth
 from .financials.quality import financial_coverage, financial_quality, statement_reconciliation
 from .financials.quarters import derive_standalone_quarters
 from .financials.vintages import select_latest_disclosed
@@ -60,16 +62,25 @@ def run_fundamentals_analysis(
         is_financial = (metadata.sector or "").lower() in {"financial services", "banks", "insurance"}
         annual, annual_ratios = calculate_fundamentals(annual, financial_sector=is_financial)
         quarterly, quarter_ratios = calculate_fundamentals(quarterly, financial_sector=is_financial)
-        ratios = pd.concat([annual_ratios, quarter_ratios], ignore_index=True)
+        annual, annual_eps_ratios = add_eps_growth(annual, observations, frequency="annual")
+        quarterly, quarter_eps_ratios = add_eps_growth(quarterly, observations, frequency="quarterly")
+        annual, capital_ratios = calculate_capital_efficiency(annual, financial_sector=is_financial)
+        ratios = pd.concat(
+            [annual_ratios, quarter_ratios, annual_eps_ratios, quarter_eps_ratios, capital_ratios],
+            ignore_index=True,
+        )
         mappings = mappings_for(ticker, payload.identity.cik)
-        coverage = financial_coverage(selected, mappings)
+        coverage = financial_coverage(
+            observations, selected, mappings,
+            source_facts=payload.facts, fiscal_year_end=payload.identity.fiscal_year_end,
+        )
         quality = financial_quality(observations, decisions, quarter_issues)
         quality = pd.concat(
             [quality, statement_reconciliation(annual), statement_reconciliation(quarterly)],
             ignore_index=True,
         )
         latest = annual.iloc[-1] if not annual.empty else None
-        required = ("revenue", "operating_income", "net_income_consolidated", "ocf", "capex_ppe")
+        required = ("revenue", "operating_income", "net_income_parent", "ocf", "capex_ppe")
         missing = [name for name in required if latest is None or name not in latest or pd.isna(latest[name])]
         status = "UNAVAILABLE" if annual.empty else "PARTIAL" if missing else "AVAILABLE"
         reason = (

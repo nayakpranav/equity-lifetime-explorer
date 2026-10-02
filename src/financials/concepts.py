@@ -29,7 +29,10 @@ PILOT_CIKS = {
 COMMON_MAPPINGS = (
     ConceptMapping("gross_profit", "GrossProfit", "income"),
     ConceptMapping("operating_income", "OperatingIncomeLoss", "income"),
-    ConceptMapping("net_income_consolidated", "NetIncomeLoss", "income"),
+    # The SEC taxonomy labels NetIncomeLoss as attributable to the parent.
+    # It must not be described as consolidated profit including non-controlling interests.
+    ConceptMapping("net_income_parent", "NetIncomeLoss", "income"),
+    ConceptMapping("eps_basic", "EarningsPerShareBasic", "income", "USD/shares"),
     ConceptMapping("eps_diluted", "EarningsPerShareDiluted", "income", "USD/shares"),
     ConceptMapping("ocf", "NetCashProvidedByUsedInOperatingActivities", "cash_flow"),
     ConceptMapping("capex_ppe", "PaymentsToAcquirePropertyPlantAndEquipment", "cash_flow", sign="positive_outflow"),
@@ -61,4 +64,13 @@ REVENUE_MAPPINGS = {
 def mappings_for(ticker: str, cik: str) -> tuple[ConceptMapping, ...]:
     if PILOT_CIKS.get(ticker) != cik:
         return ()
-    return (*REVENUE_MAPPINGS[ticker], *COMMON_MAPPINGS)
+    if ticker == "NVDA":
+        # A broader reported productive-asset cash payment, separately named.
+        # It includes software/intangibles and is NOT silently substituted for PPE CapEx.
+        productive = (ConceptMapping(
+            "productive_asset_spending", "PaymentsToAcquireProductiveAssets",
+            "cash_flow", sign="positive_outflow", first_end="2019-01-01",
+        ),)
+    else:
+        productive = ()
+    return (*REVENUE_MAPPINGS[ticker], *COMMON_MAPPINGS, *productive)

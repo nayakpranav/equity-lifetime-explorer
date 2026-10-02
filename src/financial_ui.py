@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .financial_models import FundamentalsResult
-from .formatting import format_money
+from .formatting import format_money, format_percent
 from .ui import KpiCard
 
 
@@ -15,11 +15,18 @@ def fundamentals_kpi_cards(result: FundamentalsResult) -> list[KpiCard]:
     def money(concept: str) -> str:
         return format_money(latest.get(concept), currency, compact=True) if latest is not None else "Not available"
 
+    def percent(concept: str) -> str:
+        return format_percent(latest.get(concept)) if latest is not None else "Not available"
+
+    eps = format_money(latest.get("eps_diluted"), currency) if latest is not None else "Not available"
+
     return [
         KpiCard(f"Revenue · {year}", money("revenue"), "blue"),
         KpiCard(f"Operating income · {year}", money("operating_income"), "blue"),
-        KpiCard(f"Consolidated net income · {year}", money("net_income_consolidated"), "violet"),
+        KpiCard(f"Net income attributable to parent · {year}", money("net_income_parent"), "violet"),
         KpiCard(f"Operating cash flow · {year}", money("ocf"), "blue"),
         KpiCard(f"Free cash flow · {year}", money("fcf"), "green"),
-        KpiCard(f"Net debt · {year}", money("net_debt"), "violet"),
+        KpiCard(f"Reported diluted EPS · {year}", eps, "violet"),
+        KpiCard(f"Parent ROE · {year}", percent("roe"), "blue"),
+        KpiCard(f"ROCE · {year}", percent("roce"), "blue"),
     ]

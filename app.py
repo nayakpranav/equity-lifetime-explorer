@@ -67,16 +67,27 @@ def analyze(ticker: str, force_refresh: bool):
     return cached_analysis(symbol)
 
 
+class NonCacheableFinancialResult(Exception):
+    def __init__(self, result: FundamentalsResult):
+        self.result = result
+        super().__init__(result.status)
+
+
 @st.cache_data(ttl="24h", max_entries=12, show_spinner=False)
 def cached_fundamentals(metadata):
-    return run_fundamentals_analysis(metadata)
+    result = run_fundamentals_analysis(metadata)
+    if result.status in {"TRANSPORT_BLOCKED", "FINANCIAL_ERROR", "MISSING_SEC_IDENTITY"}:
+        raise NonCacheableFinancialResult(result)
+    return result
 
 
 def analyze_fundamentals(metadata, force_refresh: bool):
     if force_refresh:
         cached_fundamentals.clear(metadata)
-        return run_fundamentals_analysis(metadata, force_refresh=True)
-    return cached_fundamentals(metadata)
+    try:
+        return cached_fundamentals(metadata)
+    except NonCacheableFinancialResult as exc:
+        return exc.result
 
 
 def render_company_header(result) -> None:

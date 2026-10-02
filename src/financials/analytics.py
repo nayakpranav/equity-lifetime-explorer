@@ -8,8 +8,9 @@ import pandas as pd
 
 
 FLOW_CONCEPTS = {
-    "revenue", "gross_profit", "operating_income", "net_income_consolidated",
-    "eps_diluted", "ocf", "capex_ppe", "investing_cash_flow", "financing_cash_flow",
+    "revenue", "gross_profit", "operating_income", "net_income_parent",
+    "eps_basic", "eps_diluted", "ocf", "capex_ppe", "productive_asset_spending",
+    "investing_cash_flow", "financing_cash_flow",
 }
 
 
@@ -36,6 +37,11 @@ def build_period_table(selected: pd.DataFrame, derived: pd.DataFrame, *, frequen
     for (year, quarter), group in eligible.groupby(["fiscal_year", "fiscal_quarter"], dropna=True, sort=True):
         if frequency == "annual" and int(quarter) != 4:
             continue
+        # An opening balance-sheet comparative is not a completed annual or
+        # standalone quarterly income/cash-flow statement.
+        required_type = "annual" if frequency == "annual" else "quarter"
+        if not group["period_type"].eq(required_type).any():
+            continue
         # A fiscal period must have one coherent end date. Do not combine shifted
         # contexts merely because their issuer FY/quarter labels happen to match.
         date_counts = group["period_end"].value_counts()
@@ -59,6 +65,9 @@ def build_period_table(selected: pd.DataFrame, derived: pd.DataFrame, *, frequen
             row[f"{concept}_acceptance_utc"] = observation["acceptance_timestamp_utc"]
             row[f"{concept}_source_tag"] = observation["provider_concept"]
             row[f"{concept}_quality_flags"] = observation["quality_flags"]
+            row[f"{concept}_revision_status"] = observation["revision_status"]
+            if concept.startswith("eps_"):
+                row[f"{concept}_share_basis_status"] = observation["share_basis_status"]
         records.append(row)
     return pd.DataFrame(records).sort_values(["fiscal_year", "fiscal_quarter"]).reset_index(drop=True) if records else pd.DataFrame()
 
@@ -97,9 +106,9 @@ def calculate_fundamentals(frame: pd.DataFrame, *, financial_sector: bool = Fals
         output.at[index, "fcf_status"] = fcf_status
         for name, numerator, denominator in (
             ("operating_margin", _money(row.get("operating_income")), revenue),
-            ("net_margin", _money(row.get("net_income_consolidated")), revenue),
+            ("net_margin", _money(row.get("net_income_parent")), revenue),
             ("fcf_margin", fcf, revenue),
-            ("ocf_to_income", ocf, _money(row.get("net_income_consolidated"))),
+            ("ocf_to_income", ocf, _money(row.get("net_income_parent"))),
         ):
             value, status = _ratio(numerator, denominator)
             if financial_sector and name in {"fcf_margin", "ocf_to_income"}:
@@ -128,7 +137,7 @@ def calculate_fundamentals(frame: pd.DataFrame, *, financial_sector: bool = Fals
             output["fiscal_year"].eq(int(row["fiscal_year"]) - 1)
             & output["fiscal_quarter"].eq(row["fiscal_quarter"])
         ]
-        for concept in ("revenue", "operating_income", "net_income_consolidated", "ocf", "fcf"):
+        for concept in ("revenue", "operating_income", "net_income_parent", "ocf", "fcf"):
             current = _money(row.get(concept))
             previous = _money(prior.iloc[-1].get(concept)) if len(prior) else None
             if current is not None and previous is not None and current > 0 and previous > 0:
@@ -148,7 +157,7 @@ def calculate_fundamentals(frame: pd.DataFrame, *, financial_sector: bool = Fals
                     output["fiscal_year"].between(int(row["fiscal_year"]) - years, int(row["fiscal_year"]))
                     & output["fiscal_quarter"].eq(4)
                 ]
-                for concept in ("revenue", "operating_income", "net_income_consolidated", "ocf", "fcf"):
+                for concept in ("revenue", "operating_income", "net_income_parent", "ocf", "fcf"):
                     complete = set(span["fiscal_year"]) == set(range(int(row["fiscal_year"]) - years, int(row["fiscal_year"]) + 1))
                     first = _money(span.iloc[0].get(concept)) if complete else None
                     last = _money(span.iloc[-1].get(concept)) if complete else None

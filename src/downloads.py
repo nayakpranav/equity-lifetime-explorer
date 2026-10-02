@@ -27,6 +27,7 @@ DATA_EXPORTS = (
     ("financial_quarterly_csv", "SEC Standalone Quarterly Financials CSV"),
     ("financial_ratios_csv", "Financial Ratios CSV"),
     ("financial_provenance_csv", "SEC Financial Provenance CSV"),
+    ("financial_quality_csv", "SEC Financial Quality CSV"),
 )
 
 
@@ -47,6 +48,8 @@ def export_unavailability_reason(
         if fundamentals is None:
             return "Run ANALYZE to check SEC financial availability."
         if key == "financial_provenance_csv" and fundamentals.available and not fundamentals.observations.empty:
+            return None
+        if key == "financial_quality_csv" and fundamentals.available:
             return None
         if key == "financial_quarterly_csv" and fundamentals.available and not fundamentals.quarterly.empty:
             return None

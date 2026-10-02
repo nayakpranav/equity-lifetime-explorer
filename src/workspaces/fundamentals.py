@@ -6,6 +6,7 @@ import streamlit as st
 
 from ..charts.fundamentals import build_fundamentals_figures
 from ..financial_models import FundamentalsResult
+from ..financials.horizons import HORIZONS
 from ..financial_ui import fundamentals_kpi_cards
 from ..ui import kpi_grid_html
 
@@ -25,26 +26,38 @@ def render_fundamentals_workspace(result: FundamentalsResult, *, theme: str) -> 
     )
     if result.status == "PARTIAL":
         st.warning(result.reason)
-    frequency = st.segmented_control(
-        "Statement view", ["Annual", "Quarterly"], default="Annual",
-        key="fundamentals_frequency",
-    )
+    frequency_column, horizon_column = st.columns([1, 1.6])
+    with frequency_column:
+        frequency = st.segmented_control(
+            "Statement view", ["Annual", "Quarterly"], default="Annual",
+            key="fundamentals_frequency",
+        )
+    with horizon_column:
+        horizon = st.segmented_control(
+            "History shown", HORIZONS, default="MAX",
+            key="fundamentals_horizon",
+        )
     selected = "quarterly" if frequency == "Quarterly" else "annual"
     frame = result.quarterly if selected == "quarterly" else result.annual
     if frame.empty:
         st.info(f"No verified {selected} SEC statement periods are available.")
         return
     st.markdown(kpi_grid_html(fundamentals_kpi_cards(result)), unsafe_allow_html=True)
-    st.caption("Headline cards use the latest completed annual fiscal period. Net debt remains unavailable until a complete non-overlapping debt definition is verified.")
-    for heading, figure in build_fundamentals_figures(result, theme=theme, frequency=selected).items():
+    st.caption("Headline cards use the latest completed annual fiscal period and do not change with the chart horizon. ROE uses parent income and average parent equity; ROCE uses operating income over average assets less current liabilities. Both require compatible consecutive fiscal periods.")
+    for heading, figure in build_fundamentals_figures(
+        result, theme=theme, frequency=selected, horizon=horizon,
+    ).items():
         st.markdown(f"#### {heading}")
         st.plotly_chart(figure, width="stretch", theme=None, config={"displaylogo": False, "responsive": True})
     with st.expander("Normalized statement table", expanded=False):
         columns = [column for column in (
             "fiscal_year", "fiscal_quarter", "period_end", "currency", "revenue",
-            "operating_income", "net_income_consolidated", "eps_diluted", "ocf",
-            "capex_ppe", "fcf", "cash_equivalents", "reported_long_term_debt",
-            "shareholders_equity", "operating_margin", "net_margin", "fcf_margin",
+            "operating_income", "net_income_parent", "eps_basic", "eps_diluted", "ocf",
+            "capex_ppe", "productive_asset_spending", "fcf", "cash_equivalents", "reported_long_term_debt",
+            "shareholders_equity", "assets", "current_liabilities", "operating_margin",
+            "net_margin", "fcf_margin", "eps_basic_yoy", "eps_diluted_yoy",
+            "eps_basic_cagr_3y", "eps_diluted_cagr_3y", "roe", "roe_status",
+            "roce", "roce_status",
         ) if column in frame]
         st.dataframe(frame[columns], width="stretch", hide_index=True)
     with st.expander("Coverage, source lineage and data quality", expanded=False):
@@ -53,4 +66,4 @@ def render_fundamentals_workspace(result: FundamentalsResult, *, theme: str) -> 
         if not result.quality.empty:
             st.dataframe(result.quality.head(100), width="stretch", hide_index=True)
         st.caption(f"SEC retrieval: {result.retrieved_at_utc} · mapped observations: {len(result.observations):,} · SHA-256: {result.source_sha256}")
-        st.caption("PPE cash payments are positive outflows. FCF = operating cash flow − verified PPE payments. Acquisitions are excluded. Missing components are not zero. Reported long-term debt is a partial debt measure, so net debt is withheld.")
+        st.caption("Reported EPS is not normalized to today's share basis. EPS growth uses same-filing comparatives; multiyear growth chains only complete comparable pairs. Quarterly EPS is never derived by subtraction. ROCE uses operating income as an EBIT proxy and is withheld for financial-sector issuers. PPE cash payments are positive outflows. FCF = operating cash flow − verified PPE payments. NVIDIA's broader productive-asset spending includes software/intangibles and is not substituted for PPE CapEx. Acquisitions are excluded. Missing components are not zero. Reported long-term debt is partial, so net debt is withheld.")

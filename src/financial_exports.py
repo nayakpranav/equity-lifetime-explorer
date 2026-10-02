@@ -66,6 +66,12 @@ def financial_provenance_csv(result: FundamentalsResult) -> bytes:
     return financial_csv(frame)
 
 
+def financial_quality_csv(result: FundamentalsResult) -> bytes:
+    if not result.available:
+        raise ValueError("SEC financial quality report is unavailable")
+    return financial_csv(result.quality)
+
+
 def fundamentals_html(result: FundamentalsResult, *, theme: str = "dark", portable: bool = False) -> bytes:
     if not result.available:
         raise ValueError("Financial Fundamentals report is unavailable")
@@ -90,9 +96,12 @@ def fundamentals_html(result: FundamentalsResult, *, theme: str = "dark", portab
     )
     annual_table = result.annual[[column for column in (
         "fiscal_year", "period_end", "currency", "revenue", "operating_income",
-        "net_income_consolidated", "ocf", "capex_ppe", "fcf", "cash_equivalents",
+        "net_income_parent", "eps_basic", "eps_diluted", "ocf", "capex_ppe",
+        "productive_asset_spending", "fcf", "eps_basic_yoy", "eps_diluted_yoy",
+        "eps_basic_cagr_3y", "eps_diluted_cagr_3y", "roe", "roe_status",
+        "roce", "roce_status", "cash_equivalents",
         "reported_long_term_debt", "fcf_status", "net_debt_status",
-    ) if column in result.annual]].tail(15).to_html(index=False, escape=True, classes="data-table", border=0)
+    ) if column in result.annual]].to_html(index=False, escape=True, classes="data-table", border=0)
     coverage_table = result.coverage.to_html(index=False, escape=True, classes="data-table", border=0)
     quality_table = result.quality.head(50).to_html(index=False, escape=True, classes="data-table", border=0)
     page = "#060913" if theme == "dark" else "#F4F7FC"
@@ -113,7 +122,7 @@ h1{{font-size:clamp(27px,4vw,42px);margin:4px 0}}h2{{font-size:21px}}p,small{{co
 <div class='cards'>{cards}</div>{''.join(chart_sections)}
 <section class='panel'><h2>Annual Statement Summary</h2><div class='table-wrap'>{annual_table}</div></section>
 <section class='panel'><h2>Coverage and Data Quality</h2><div class='table-wrap'>{coverage_table}</div><h2>Quality Flags</h2><div class='table-wrap'>{quality_table}</div></section>
-<section class='panel'><h2>Methodology and Provenance</h2><p>Company Facts supplies standard entity-wide reported facts. This is latest-disclosed history and may include later revisions. It is not point-in-time historical valuation data. Monetary quarterly cash flows are reconstructed only from compatible cumulative filings. Missing values are unavailable, not zero. PPE cash payments are positive outflows; ordinary FCF equals OCF less those payments. Acquisitions are excluded. Reported long-term debt is not a verified complete debt total, so net debt is unavailable.</p>
+<section class='panel'><h2>Methodology and Provenance</h2><p>Company Facts supplies standard entity-wide reported facts. This is latest-disclosed history and may include later revisions. It is not point-in-time historical valuation data. The SEC NetIncomeLoss tag means net income attributable to the parent. Monetary quarterly cash flows are reconstructed only from compatible cumulative filings; quarterly EPS is never subtracted. Reported basic and diluted EPS retain their original, unnormalized share basis. EPS growth uses same-filing comparatives, and multiyear growth chains only complete comparable pairs. ROE uses parent income divided by average parent equity. ROCE uses operating income as an EBIT proxy divided by average (assets less current liabilities), when adjacent periods are compatible. Missing values are unavailable, not zero. PPE cash payments are positive outflows; ordinary FCF equals OCF less those payments. Acquisitions are excluded. NVIDIA's productive-asset spending includes intangible assets and is not silently substituted for PPE. Reported long-term debt is not a verified complete debt total, so net debt is unavailable.</p>
 <p>Source: SEC EDGAR Company Facts and submissions · Retrieved {html.escape(result.retrieved_at_utc or '')} · Mapping {html.escape(result.mapping_version)} · Source SHA-256 {html.escape(result.source_sha256 or '')}</p>
 <p>For informational and research purposes only. No historical valuation multiples are calculated in this release.</p></section>
 </main></body></html>"""

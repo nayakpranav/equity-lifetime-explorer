@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from .charts import build_dividend_chart, build_lifetime_chart, build_volume_chart
 from .config import THEMES
 from .financial_exports import (
-    annual_financial_csv, financial_provenance_csv, financial_ratios_csv,
+    annual_financial_csv, financial_provenance_csv, financial_ratios_csv, financial_quality_csv,
     fundamentals_html, quarterly_financial_csv,
 )
 from .financial_models import FundamentalsResult
@@ -247,13 +247,19 @@ def combined_research_html(
         )
         financial_content = (
             financial_cards + financial_charts
-            + "<h3>Annual SEC Statement Summary</h3>" + _report_table(fundamentals.annual.tail(15), [
+            + "<h3>Annual SEC Statement Summary</h3>" + _report_table(fundamentals.annual, [
                 "fiscal_year", "period_end", "currency", "revenue", "operating_income",
-                "net_income_consolidated", "ocf", "capex_ppe", "fcf", "fcf_status",
+                "net_income_parent", "eps_basic", "eps_diluted", "eps_diluted_yoy",
+                "roe", "roe_status", "roce", "roce_status", "ocf", "capex_ppe",
+                "productive_asset_spending", "fcf", "fcf_status",
             ])
             + "<h3>Concept Coverage</h3>" + _report_table(fundamentals.coverage)
             + "<div class='section-copy'>Latest-disclosed SEC history may contain later revisions. "
+            "SEC NetIncomeLoss is parent-attributable income. Reported EPS retains its original share basis; "
+            "growth uses same-filing comparatives only. ROE uses average parent equity; ROCE uses average "
+            "assets less current liabilities with operating income as an EBIT proxy. "
             "PPE purchases are positive outflows; ordinary FCF is OCF less PPE purchases. "
+            "NVIDIA's broader productive-asset spending is separately labelled. "
             "Reported long-term debt is partial, so net debt is withheld. "
             "This is not a point-in-time historical valuation series.</div>"
         )
@@ -404,6 +410,7 @@ def export_bundle(
             "financial_annual_csv": (f"{ticker}_sec_annual_financials_{report_date}.csv", lambda: annual_financial_csv(fundamentals)),
             "financial_ratios_csv": (f"{ticker}_financial_ratios_{report_date}.csv", lambda: financial_ratios_csv(fundamentals)),
             "financial_provenance_csv": (f"{ticker}_sec_financial_provenance_{report_date}.csv", lambda: financial_provenance_csv(fundamentals)),
+            "financial_quality_csv": (f"{ticker}_sec_financial_quality_{report_date}.csv", lambda: financial_quality_csv(fundamentals)),
         })
         if not fundamentals.quarterly.empty:
             builders["financial_quarterly_csv"] = (f"{ticker}_sec_quarterly_financials_{report_date}.csv", lambda: quarterly_financial_csv(fundamentals))

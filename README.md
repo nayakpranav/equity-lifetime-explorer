@@ -22,6 +22,7 @@ provider-adjusted total-return proxy.
 - In-memory standalone HTML, CSV, and complete ZIP downloads; no persistent server storage is assumed.
 - Dark and light Plotly themes with native Streamlit controls.
 - Pilot SEC EDGAR annual/quarterly statements for **MSFT, KO, AAPL and NVDA**, with exact ticker/CIK checks, filing/acceptance lineage, source hashes, quality flags and explicit missing-data states.
+- Reported basic/diluted EPS, same-filing comparative EPS growth, conservative parent-attributable ROE, and an explicitly qualified operating-income-basis ROCE. Financial charts offer display-only **1Y / 3Y / 5Y / 10Y / MAX** horizons.
 
 ## Methodology
 
@@ -58,9 +59,9 @@ the provider genuinely supplied it.
 
 The financial layer uses the SEC's public [Company Facts and submissions APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces). It maps only audited standard `us-gaap` concepts for the four pilot issuers. Normalized observations retain accession, fiscal dates, filing and acceptance timestamps, original unit, exact decimal value, revision status, and source lineage. Historical statements are **latest-disclosed**, not point-in-time as-known-at-date valuation inputs. The full observation ledger and selection decisions are exportable.
 
-Annual and standalone quarterly views keep duration flows distinct from instant balance-sheet facts. Compatible cumulative monetary flows may be subtracted to derive a standalone quarter; EPS is never derived this way. PPE capital spending is a positive cash outflow; ordinary free cash flow is operating cash flow less verified PPE spending, excluding acquisitions. Missing inputs are not treated as zero. Revenue, operating income, consolidated net income, EPS, cash flows, cash, reported long-term debt, margins and compatible growth rates are surfaced only when supported. Reported long-term debt is **not** a complete debt total, so total debt and net debt are deliberately withheld. No historical valuation multiples are calculated in Release A.
+Annual and standalone quarterly views keep duration flows distinct from instant balance-sheet facts. Compatible cumulative monetary flows may be subtracted to derive a standalone quarter; EPS is never derived this way. PPE capital spending is a positive cash outflow; ordinary free cash flow is operating cash flow less verified PPE spending, excluding acquisitions. Missing inputs are not treated as zero. Revenue, operating income, **parent-attributable** net income, EPS, cash flows, cash, reported long-term debt, margins and compatible growth rates are surfaced only when supported. Reported long-term debt is **not** a complete debt total, so total debt and net debt are deliberately withheld. No historical valuation multiples are calculated in Release A.
 
-The pilot is explicitly limited to U.S. reporting issuers and USD concepts. NVDA's most recent Company Facts lacks the mapped standard PPE-spending tag, so latest FCF is unavailable rather than inferred from an unaudited substitute. Company Facts omits custom company-specific tags; broader issuer coverage requires further concept audits. An unavailable SEC module does not prevent the original market workspaces from working.
+The pilot is explicitly limited to U.S. reporting issuers and USD concepts. NVDA's recent broader productive-asset-spending disclosure is kept separate from PPE capital spending, so latest PPE-basis FCF remains unavailable. Company Facts omits custom company-specific tags; broader issuer coverage requires further concept audits. An unavailable SEC module does not prevent the original market workspaces from working. See [Release A hardening and Release B readiness](RELEASE_A_HARDENING.md) for pilot coverage, ratio definitions, reconciliations, and unresolved limitations.
 
 ## Local installation
 
