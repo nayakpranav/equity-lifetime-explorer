@@ -66,3 +66,42 @@ qualified ratios, **not** as-known-at-date financial history or historical
 valuation multiples. Keep the PR as a draft until staging feedback and the
 documented coverage limitations have been reviewed. Production `main` and its
 Streamlit app must not change without explicit approval.
+
+## Final hosted verification — 2026-10-02
+
+The review app alone was rebooted with the operator's approval. Its startup log
+showed a fresh checkout of `feature/financial-fundamentals-release-a`, and the
+post-reboot UI exposed the new price-overlay, RVOL-status and quality-scope
+features introduced by feature commit `f73fc34b9ceed5f9d73f4300a564337b031d15db`.
+Community Cloud did not display the exact Git SHA in its runtime log; the
+feature branch was at that SHA when rebooted. No production app control was
+used. GitHub `main` remained at `07f9c8507c30437965ecf21022523e047b3e8db6`.
+
+- Hosted MSFT analysis retrieved SEC Company Facts and submissions (CIK
+  0000789019). Annual and quarterly statements, USD KPI formatting, EPS,
+  parent ROE, ROCE, cash-flow and balance-sheet charts rendered. The 5Y chart
+  horizon filtered quarterly traces without changing the latest annual KPIs.
+- The default-off split-adjusted price control added a secondary price trace
+  to Revenue, Free Cash Flow and Reported EPS. The workspace explains that the
+  close is aligned to fiscal-period end, not the later filing/acceptance date.
+- Market Data Quality and Financial Data Quality were separate. The financial
+  section showed SEC coverage, source lineage, retrieval time and methodology.
+  Financial HTML table formatting, missing-value markers, CDN/portable modes
+  and no-contact export checks were previously verified against generated
+  reports by deterministic/live tests; no new calculation changes were made.
+- The latest hosted MSFT RVOL was **status unverified**, not presented as a
+  completed-session number: same-day post-close provider data had no finality
+  flag. Completed and preliminary cases were covered by deterministic tests;
+  a live preliminary session was not available during this after-close check.
+- The Price, Volume and Dividend workspaces rendered after the SEC view.
+  Download Center prepared Financial Fundamentals HTML and Combined Research
+  HTML together as one selected-export ZIP (`2 selected exports packaged`).
+- The existing deterministic suite (74 passed), opt-in live suite (15 passed),
+  CDN/portable report audit and green GitHub Actions `tests` run for `f73fc34`
+  were reused. Earlier hosted pilot checks covered KO, AAPL, NVDA and the
+  unsupported-ticker unavailable state; these were not rerun without a code
+  change. The review app's private SEC setting worked, and no operator contact
+  was displayed in the hosted UI or found in prior public-export scans.
+
+This verification is sufficient for final human review of Release A; it is
+not an instruction to merge the draft PR or deploy production.
