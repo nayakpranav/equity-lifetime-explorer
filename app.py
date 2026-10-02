@@ -422,18 +422,17 @@ if result is None:
     st.stop()
 
 render_company_header(result)
-navigation, downloads = st.columns([5.4, 1], vertical_alignment="bottom")
-with navigation:
-    workspace = st.segmented_control(
-        "Analytical workspace",
-        ["Price & Ownership", "Volume & Liquidity", "Dividends & Total Return", "Financial Fundamentals"],
-        default="Price & Ownership",
-        key="workspace",
-        width="stretch",
-    )
+_, downloads = st.columns([4.5, 1.5], vertical_alignment="bottom")
 with downloads:
     if st.button("Downloads", icon=":material/download:", width="stretch"):
         render_download_center(result, controls, financial_result)
+workspace = st.segmented_control(
+    "Analytical workspace",
+    ["Price & Ownership", "Volume & Liquidity", "Dividends & Total Return", "Financial Fundamentals"],
+    default="Price & Ownership",
+    key="workspace",
+    width="stretch",
+)
 
 with st.container(border=True):
     if workspace == "Price & Ownership":
