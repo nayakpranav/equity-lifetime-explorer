@@ -20,6 +20,10 @@ class SecurityIdentity:
     exchange: str | None
     reporting_currency: str
     fiscal_year_end: str
+    sec_ticker: str | None = None
+    identity_method: str = "exact_ticker"
+    sic: str | None = None
+    sic_description: str | None = None
 
 
 @dataclass
@@ -36,14 +40,14 @@ class FundamentalsResult:
     quality: pd.DataFrame = field(default_factory=pd.DataFrame)
     retrieved_at_utc: str | None = None
     source_sha256: str | None = None
-    mapping_version: str = "sec-pilot-2026-10-02"
+    mapping_version: str = "sec-general-2026-10-05"
     latest_view: str = "Latest-disclosed history"
     source: str = "SEC EDGAR Company Facts and submissions"
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def available(self) -> bool:
-        return self.status in {"AVAILABLE", "PARTIAL"} and not self.annual.empty
+        return self.status in {"AVAILABLE", "PARTIAL"} and (not self.annual.empty or not self.quarterly.empty)
 
 
 @dataclass(frozen=True)

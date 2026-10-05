@@ -412,9 +412,10 @@ def test_fcf_capex_sign_growth_and_incomplete_debt_are_status_bearing():
     assert negative.iloc[-1].fcf is None and negative.iloc[-1].fcf_status == "CAPEX_SIGN_ANOMALY"
 
 
-def test_nonpilot_and_sec_failure_leave_market_analysis_separate(synthetic_result):
-    unsupported = run_fundamentals_analysis(synthetic_result.metadata)
-    assert unsupported.status == "UNSUPPORTED_SOURCE"
+def test_non_sec_source_leaves_market_analysis_separate(synthetic_result):
+    from dataclasses import replace
+    unsupported = run_fundamentals_analysis(replace(synthetic_result.metadata, ticker="SAP.DE"))
+    assert unsupported.status == "NON_SEC_SOURCE"
     assert unsupported.annual.empty
     assert synthetic_result.metrics
 
@@ -429,9 +430,9 @@ def test_sec_provider_checks_companyfacts_identity_and_exact_ticker(synthetic_re
             if url.endswith("company_tickers.json"):
                 body = {"0": {"ticker": "TEST", "cik_str": 789019, "title": "Synthetic"}}
             elif "/submissions/" in url:
-                body = {"tickers": ["TEST"], "name": "Synthetic", "fiscalYearEnd": "0630", "filings": {"recent": {}, "files": []}}
+                body = {"cik": 789019, "tickers": ["TEST"], "name": "Synthetic", "fiscalYearEnd": "0630", "filings": {"recent": {"accessionNumber": ["test"], "filingDate": ["2025-07-31"], "form": ["10-K"]}, "files": []}}
             else:
-                body = {"cik": 123 if self.wrong_cik else 789019, "facts": {}}
+                body = {"cik": 123 if self.wrong_cik else 789019, "facts": {"us-gaap": {"Assets": {"units": {}}}}}
             return SimpleNamespace(status_code=200, content=b"{}", json=lambda: body)
 
     provider = SecFinancialProvider("Test Research test@example.com", session=FakeSession(wrong_cik=True))

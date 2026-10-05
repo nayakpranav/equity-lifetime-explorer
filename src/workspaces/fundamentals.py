@@ -25,14 +25,15 @@ def render_fundamentals_workspace(
     st.caption(
         f"Source: {result.source} · {identity.issuer_name} · CIK {identity.cik} · "
         f"Reporting currency {identity.reporting_currency} · {result.latest_view} · "
-        f"latest annual fiscal end {result.annual.iloc[-1]['period_end']}"
+        f"latest verified fiscal end {(result.annual if not result.annual.empty else result.quarterly).iloc[-1]['period_end']}"
     )
+    st.caption(result.metadata.get("mapping_scope", "Issuer-specific audited override"))
     if result.status == "PARTIAL":
         st.warning(result.reason)
     frequency_column, horizon_column = st.columns([1, 1.6])
     with frequency_column:
         frequency = st.segmented_control(
-            "Statement view", ["Annual", "Quarterly"], default="Annual",
+            "Statement view", ["Annual", "Quarterly"], default="Annual" if not result.annual.empty else "Quarterly",
             key="fundamentals_frequency",
         )
     with horizon_column:
@@ -68,7 +69,8 @@ def render_fundamentals_workspace(
             "fiscal_year", "fiscal_quarter", "period_end", "currency", "revenue",
             "operating_income", "net_income_parent", "eps_basic", "eps_diluted", "ocf",
             "capex_ppe", "productive_asset_spending", "fcf", "cash_equivalents", "reported_long_term_debt",
-            "shareholders_equity", "assets", "current_liabilities", "operating_margin",
+            "shareholders_equity", "assets", "liabilities", "current_assets", "current_liabilities", "gross_profit",
+            "long_term_debt_noncurrent", "long_term_debt_current", "short_term_borrowings", "commercial_paper", "operating_margin",
             "net_margin", "fcf_margin", "eps_basic_yoy", "eps_diluted_yoy",
             "eps_basic_cagr_3y", "eps_diluted_cagr_3y", "roe", "roe_status",
             "roce", "roce_status",

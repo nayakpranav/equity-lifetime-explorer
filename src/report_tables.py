@@ -14,7 +14,8 @@ MONEY_COLUMNS = {
     "revenue", "operating_income", "net_income_parent", "gross_profit", "ocf",
     "capex_ppe", "productive_asset_spending", "fcf", "cash_equivalents",
     "reported_long_term_debt", "total_debt", "net_debt", "shareholders_equity",
-    "assets", "current_liabilities", "dollar_volume", "dollar_volume_ma_20",
+    "assets", "liabilities", "current_assets", "current_liabilities", "dollar_volume", "dollar_volume_ma_20",
+    "long_term_debt_noncurrent", "long_term_debt_current", "short_term_borrowings", "commercial_paper",
 }
 PER_SHARE_COLUMNS = {"eps_basic", "eps_diluted", "raw_close", "annual_dividend"}
 PERCENT_COLUMNS = {

@@ -14,6 +14,7 @@ from src.research_service import run_fundamentals_analysis
 from src.financial_exports import annual_financial_csv, fundamentals_html
 from src.downloads import prepare_complete_package, prepare_selected_download
 from src.service import run_equity_analysis
+from src.exports import combined_research_html
 
 
 pytestmark = pytest.mark.integration
@@ -60,6 +61,42 @@ def test_live_sec_pilot_normalization_and_exports(ticker):
         # Standard PPE CapEx is not currently available in Company Facts.
         # Do not fill the gap with a present-day estimate or mark FCF valid.
         assert result.annual.iloc[-1]["fcf_status"] == "MISSING_INPUT"
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_SEC_INTEGRATION") != "1" or not os.getenv("SEC_USER_AGENT"),
+    reason="set RUN_SEC_INTEGRATION=1 and a private SEC_USER_AGENT",
+)
+@pytest.mark.parametrize("ticker", ["MELI", "CAT", "HD", "DE", "META", "JPM", "BRK.B"])
+def test_live_generalized_sec_coverage_and_exports(ticker, synthetic_result):
+    result = run_fundamentals_analysis(_metadata(ticker))
+    assert result.available, (result.status, result.reason)
+    assert len(result.annual) > 5 and len(result.quarterly) > 5
+    assert result.identity.cik and result.identity.sec_ticker
+    assert "issuer-specific audit not performed" in result.metadata["mapping_scope"]
+    assert not result.observations.empty
+    assert result.observations.acceptance_timestamp_utc.notna().any()
+    for record in result.observations.to_dict("records"):
+        validate_observation(record)
+    for theme in ("dark", "light"):
+        assert b"Financial Fundamentals" in fundamentals_html(result, theme=theme)
+        combined = combined_research_html(synthetic_result, fundamentals=result, theme=theme)
+        assert b"Financial Data Quality" in combined
+        assert combined.count(b"https://cdn.plot.ly/") == 1
+    portable = combined_research_html(synthetic_result, fundamentals=result, portable=True)
+    assert portable.count(b"plotly.js v") == 1
+    selected = prepare_selected_download(synthetic_result, ["fundamentals_html", "financial_annual_csv"], fundamentals=result)
+    with zipfile.ZipFile(io.BytesIO(selected.payload)) as archive:
+        assert len(archive.namelist()) == 2
+    complete = prepare_complete_package(synthetic_result, fundamentals=result)
+    with zipfile.ZipFile(io.BytesIO(complete.payload)) as archive:
+        assert any("sec_financial_provenance" in name for name in archive.namelist())
+    if ticker in {"JPM", "BRK.B"}:
+        assert result.metadata["financial_sector"]
+        assert result.annual.fcf.isna().all()
+        assert result.annual.roce.isna().all()
+    if ticker == "BRK.B":
+        assert result.identity.sec_ticker == "BRK-B"
 
 
 @pytest.mark.skipif(

@@ -65,6 +65,9 @@
       "type": "string",
       "minLength": 1
     },
+    "mapping_priority": {"type": "integer", "minimum": 0},
+    "mapping_basis": {"type": "string"},
+    "mapping_scope": {"type": "string"},
     "context_type": {
       "enum": [
         "duration",

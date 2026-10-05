@@ -66,6 +66,7 @@ def build_period_table(selected: pd.DataFrame, derived: pd.DataFrame, *, frequen
             row[f"{concept}_source_tag"] = observation["provider_concept"]
             row[f"{concept}_quality_flags"] = observation["quality_flags"]
             row[f"{concept}_revision_status"] = observation["revision_status"]
+            row[f"{concept}_mapping_basis"] = observation.get("mapping_basis", "standard")
             if concept.startswith("eps_"):
                 row[f"{concept}_share_basis_status"] = observation["share_basis_status"]
         records.append(row)
@@ -144,6 +145,9 @@ def calculate_fundamentals(frame: pd.DataFrame, *, financial_sector: bool = Fals
                 value, status = current / previous - 1, "VALID"
             else:
                 value, status = None, "MISSING_INPUT" if current is None or previous is None else "NONPOSITIVE_GROWTH_BASE"
+            basis_column = f"{concept}_mapping_basis"
+            if current is not None and previous is not None and len(prior) and basis_column in output and row.get(basis_column) != prior.iloc[-1].get(basis_column):
+                value, status = None, "INCOMPATIBLE_MAPPING_BASIS"
             output.at[index, f"{concept}_yoy"] = value
             ratios.append({
                 "frequency": row["frequency"], "fiscal_year": int(row["fiscal_year"]),
@@ -163,6 +167,9 @@ def calculate_fundamentals(frame: pd.DataFrame, *, financial_sector: bool = Fals
                     last = _money(span.iloc[-1].get(concept)) if complete else None
                     value = (last / first) ** (Decimal(1) / Decimal(years)) - 1 if first is not None and last is not None and first > 0 and last > 0 else None
                     status = "VALID" if value is not None else "MISSING_OR_NONPOSITIVE_SPAN"
+                    basis_column = f"{concept}_mapping_basis"
+                    if basis_column in span and span[basis_column].nunique(dropna=False) > 1:
+                        value, status = None, "INCOMPATIBLE_MAPPING_BASIS"
                     output.at[index, f"{concept}_cagr_{years}y"] = value
                     ratios.append({
                         "frequency": "annual", "fiscal_year": int(row["fiscal_year"]),
