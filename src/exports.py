@@ -199,6 +199,10 @@ def combined_research_html(
     """Compose one navigable research report with a single Plotly.js payload."""
     if theme not in THEMES:
         raise ValueError("theme must be dark or light")
+    if financial_price_overlay:
+        from .financials.presentation import price_overlay_unavailable_reason
+        financial_price_overlay = bool(fundamentals is not None and
+            price_overlay_unavailable_reason(fundamentals, result) is None)
     metadata = result.metadata
     palette = THEMES[theme]
     include_js: str | bool = True if portable else "cdn"
@@ -262,7 +266,7 @@ def combined_research_html(
         financial_content = (
             "<div class='section-copy'>" + html.escape(fundamentals.metadata.get("mapping_scope", "Issuer-specific audited override")) + "</div>" + financial_cards + financial_charts
             + ("<div class='section-copy'>Share-price overlays use the validated split-adjusted current-share price (no dividend reinvestment), aligned to the latest trading close on or before fiscal-period end within seven calendar days. Financial results were disclosed later and were not known at fiscal year-end.</div>" if financial_price_overlay else "")
-            + "<h3>Annual SEC Statement Summary</h3>" + _report_table(fundamentals.annual, fundamentals.identity.reporting_currency, [
+            + "<h3>Annual Statement Summary</h3>" + _report_table(fundamentals.annual, fundamentals.identity.reporting_currency, [
                 "fiscal_year", "period_end", "currency", "revenue", "operating_income",
                 "net_income_parent", "eps_basic", "eps_diluted", "eps_diluted_yoy",
                 "roe", "roe_status", "roce", "roce_status", "ocf", "capex_ppe",
@@ -270,11 +274,11 @@ def combined_research_html(
                 "gross_profit", "assets", "liabilities", "current_assets", "current_liabilities", "shareholders_equity",
                 "long_term_debt_noncurrent", "long_term_debt_current", "short_term_borrowings", "commercial_paper",
             ])
-            + "<h3>Standalone Quarterly SEC Statement Summary</h3>" + _report_table(fundamentals.quarterly, fundamentals.identity.reporting_currency, [
+            + "<h3>Standalone Quarterly Statement Summary</h3>" + _report_table(fundamentals.quarterly, fundamentals.identity.reporting_currency, [
                 "fiscal_year", "fiscal_quarter", "period_end", "currency", "revenue", "operating_income",
                 "net_income_parent", "eps_basic", "eps_diluted", "ocf", "capex_ppe", "fcf", "fcf_status",
             ])
-            + "<h3>Financial Data Quality</h3><div class='section-copy'>SEC coverage and reconciliation are assessed separately from Market Data Quality; there is no combined quality score.</div>"
+            + "<h3>Financial Data Quality</h3><div class='section-copy'>Financial-source coverage and reconciliation are assessed separately from Market Data Quality; there is no combined quality score.</div>"
             + "<h3>Concept Coverage</h3>" + _report_table(fundamentals.coverage, fundamentals.identity.reporting_currency)
             + "<h3>Financial Quality Flags</h3>" + _report_table(fundamentals.quality.head(100), fundamentals.identity.reporting_currency)
             + "<h3>Recent Filing &amp; Acceptance Lineage</h3>" + _report_table(
@@ -282,11 +286,14 @@ def combined_research_html(
                 fundamentals.identity.reporting_currency,
                 ["normalized_concept", "period_end", "filing_date", "acceptance_timestamp_utc", "revision_status", "quality_status"],
             )
-            + "<div class='section-copy'>SEC retrieval: " + html.escape(fundamentals.retrieved_at_utc or "unavailable")
+            + "<div class='section-copy'>Financial source: " + html.escape(fundamentals.source)
+            + " · Framework: " + html.escape(fundamentals.identity.accounting_framework)
+            + " · Issuer: " + html.escape(fundamentals.identity.issuer_id)
+            + " · Retrieval: " + html.escape(fundamentals.retrieved_at_utc or "unavailable")
             + " · Mapping: " + html.escape(fundamentals.mapping_version)
             + " · Source SHA-256: " + html.escape(fundamentals.source_sha256 or "unavailable") + "</div>"
-            + "<div class='section-copy'>Latest-disclosed SEC history may contain later revisions. "
-            "SEC NetIncomeLoss is parent-attributable income. Reported EPS retains its original share basis; "
+            + "<div class='section-copy'>Financial history may contain later revisions; unverified disclosure dates remain unavailable. "
+            "Only verified parent-attributable income concepts are mapped. Reported EPS retains its original share basis; "
             "growth uses same-filing comparatives only. ROE uses average parent equity; ROCE uses average "
             "assets less current liabilities with operating income as an EBIT proxy. "
             "PPE purchases are positive outflows; ordinary FCF is OCF less PPE purchases. "
@@ -295,7 +302,7 @@ def combined_research_html(
             "This is not a point-in-time historical valuation series.</div>"
         )
     else:
-        reason = fundamentals.reason if fundamentals is not None else "SEC financial analysis has not been run for this result."
+        reason = fundamentals.reason if fundamentals is not None else "Financial-source analysis has not been run for this result."
         financial_content = (
             "<div class='empty-state'><strong>Financial Fundamentals unavailable.</strong>"
             f"<span>{html.escape(reason)}</span></div>"
@@ -376,9 +383,9 @@ main{{max-width:1500px;margin:auto;padding:28px clamp(16px,4vw,58px) 60px}}.hero
 <section class='report-section' id='price'><h2>Price &amp; Ownership</h2><div class='section-copy'>Raw market quotations, provider-adjusted history and the mechanical ownership-equivalent reconstruction.</div><div class='chart'>{price_chart}</div><div class='callout'><strong>Ownership-equivalent interpretation</strong><span>{html.escape(ownership)} This is a mechanical reconstruction, not a counterfactual market-price forecast.</span></div></section>
 <section class='report-section' id='volume'><h2>Volume &amp; Liquidity</h2><div class='section-copy'>Long-run share volume, dollar volume, relative activity and unusual participation. {html.escape(assess_latest_rvol(result).detail)}</div><div class='cards'>{_report_cards(_kpi_cards(result, 'volume'))}</div><div class='chart'>{volume_chart}</div><h3>Notable Volume Events</h3>{_report_table(volume_events, metadata.currency, volume_columns)}<div class='section-copy'>High volume indicates elevated participation; it does not identify participant classes or establish accumulation, distribution or causation.</div></section>
 <section class='report-section' id='dividends'><h2>Dividends &amp; Total Return</h2><div class='section-copy'>Provider-reported dividends, completed-year growth, historical yield and total-return context.</div>{dividend_cards}<div class='chart'>{dividend_chart}</div>{dividend_table}</section>
-<section class='report-section' id='fundamentals'><h2>Financial Fundamentals</h2><div class='section-copy'>SEC-reported operating performance, cash generation and financial position.</div>{financial_content}</section>
+<section class='report-section' id='fundamentals'><h2>Financial Fundamentals</h2><div class='section-copy'>Source-reported operating performance, cash generation and financial position.</div>{financial_content}</section>
 <section class='report-section' id='actions'><h2>Corporate Actions</h2><div class='section-copy'>Provider and researched share-changing events used by the existing validated reconstruction.</div>{_report_table(result.actions, metadata.currency, action_columns)}</section>
-<section class='report-section' id='validation'><h2>Market Data Quality</h2><div class='section-copy'>Market-data reconstruction confidence: <strong>{html.escape(provenance.validation_status)}</strong>. This assessment does not score SEC financial coverage or statement reconciliation.</div>{_report_table(result.validation, metadata.currency)}</section>
+<section class='report-section' id='validation'><h2>Market Data Quality</h2><div class='section-copy'>Market-data reconstruction confidence: <strong>{html.escape(provenance.validation_status)}</strong>. This assessment does not score financial-source coverage or statement reconciliation.</div>{_report_table(result.validation, metadata.currency)}</section>
 <section class='report-section' id='methodology'><h2>Methodology &amp; Provenance</h2>{_report_table(provenance_frame, metadata.currency)}<h3>Methodological notes</h3><div class='method-copy'>{methodology}</div>{('<h3>Provider notes</h3><ul>' + notes + '</ul>') if notes else ''}<div class='callout'><strong>Limitations</strong><span>Market data may be delayed, incomplete or retrospectively adjusted. Mechanical no-split values are ownership-equivalent reconstructions and are not estimates of prices that would necessarily have prevailed without corporate actions. {portable_note}</span></div></section>
 <footer>For informational and research purposes only. This report is not investment advice.</footer></main></body></html>"""
     return document.encode("utf-8")
@@ -437,15 +444,16 @@ def export_bundle(
             "dividend_csv": (f"{ticker}_dividend_summary_{report_date}.csv", lambda: dividend_summary_csv(result)),
         })
     if fundamentals is not None and fundamentals.available:
+        financial_prefix = "sec" if fundamentals.identity and fundamentals.identity.issuer_id.startswith("SEC:CIK") else "financial"
         builders.update({
             "fundamentals_html": (f"{ticker}_financial_fundamentals_{report_date}.html", lambda: fundamentals_html(fundamentals, theme=theme, portable=portable_html, market=result, price_overlay=financial_price_overlay)),
-            "financial_annual_csv": (f"{ticker}_sec_annual_financials_{report_date}.csv", lambda: annual_financial_csv(fundamentals)),
+            "financial_annual_csv": (f"{ticker}_{financial_prefix}_annual_financials_{report_date}.csv", lambda: annual_financial_csv(fundamentals)),
             "financial_ratios_csv": (f"{ticker}_financial_ratios_{report_date}.csv", lambda: financial_ratios_csv(fundamentals)),
-            "financial_provenance_csv": (f"{ticker}_sec_financial_provenance_{report_date}.csv", lambda: financial_provenance_csv(fundamentals)),
-            "financial_quality_csv": (f"{ticker}_sec_financial_quality_{report_date}.csv", lambda: financial_quality_csv(fundamentals)),
+            "financial_provenance_csv": (f"{ticker}_{financial_prefix}_financial_provenance_{report_date}.csv", lambda: financial_provenance_csv(fundamentals)),
+            "financial_quality_csv": (f"{ticker}_{financial_prefix}_financial_quality_{report_date}.csv", lambda: financial_quality_csv(fundamentals)),
         })
         if not fundamentals.quarterly.empty:
-            builders["financial_quarterly_csv"] = (f"{ticker}_sec_quarterly_financials_{report_date}.csv", lambda: quarterly_financial_csv(fundamentals))
+            builders["financial_quarterly_csv"] = (f"{ticker}_{financial_prefix}_quarterly_financials_{report_date}.csv", lambda: quarterly_financial_csv(fundamentals))
     output: dict[str, bytes] = {}
     for key in selections:
         if key not in builders:

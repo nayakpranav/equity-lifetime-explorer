@@ -2,8 +2,10 @@
 
 This is not a release acceptance or deployment approval. Production remains at
 `08946a7f6cf4526ab14c4e06302a42ac7919298a`. Work is isolated on
-`feature/global-financials-release-a2`; the existing research service, UI and
-exports have not yet been switched to the new source policy.
+`feature/global-financials-release-a2`. The following feasibility table records
+the original foundation checkpoint; subsequent SEC IFRS/ESEF integration,
+live evidence and outstanding India gates are recorded in
+[Release A.2 progress](RELEASE_A2_PROGRESS.md).
 
 ## Evidence reviewed on 2026-10-05
 

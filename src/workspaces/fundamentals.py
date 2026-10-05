@@ -8,6 +8,7 @@ from ..charts.fundamentals import build_fundamentals_figures
 from ..financial_models import FundamentalsResult
 from ..models import AnalysisResult
 from ..financials.horizons import HORIZONS
+from ..financials.presentation import financial_source_caption, price_overlay_unavailable_reason
 from ..financial_ui import fundamentals_kpi_cards
 from ..ui import kpi_grid_html
 
@@ -16,15 +17,14 @@ def render_fundamentals_workspace(
     result: FundamentalsResult, *, theme: str, market: AnalysisResult | None = None,
 ) -> None:
     st.subheader("Financial Fundamentals")
-    st.caption("Operating performance, cash generation and financial position from SEC filings.")
+    st.caption("Operating performance, cash generation and financial position from verified financial sources.")
     if not result.available:
         st.info(result.reason or f"Financial Fundamentals are unavailable ({result.status}).")
         st.caption(f"Status: {result.status}. Price, volume and dividend analysis remain available.")
         return
     identity = result.identity
     st.caption(
-        f"Source: {result.source} · {identity.issuer_name} · CIK {identity.cik} · "
-        f"Reporting currency {identity.reporting_currency} · {result.latest_view} · "
+        f"Financial source: {financial_source_caption(result)} · {result.latest_view} · "
         f"latest verified fiscal end {(result.annual if not result.annual.empty else result.quarterly).iloc[-1]['period_end']}"
     )
     st.caption(result.metadata.get("mapping_scope", "Issuer-specific audited override"))
@@ -41,11 +41,16 @@ def render_fundamentals_workspace(
             "History shown", HORIZONS, default="MAX",
             key="fundamentals_horizon",
         )
+    overlay_reason = price_overlay_unavailable_reason(result, market)
     price_overlay = st.checkbox(
         "Overlay split-adjusted share price on Revenue, EPS and Free Cash Flow",
         value=False, key="financial_price_overlay",
+        disabled=overlay_reason is not None,
         help="Uses the validated market series on today's share basis, excluding dividend reinvestment. Each price is the latest close on or before the fiscal-period end; financial information was reported later.",
     )
+    price_overlay = bool(price_overlay and overlay_reason is None)
+    if overlay_reason:
+        st.caption("Price overlay unavailable: " + overlay_reason)
     if price_overlay:
         st.caption(
             "Price is aligned to fiscal-period end (nearest prior close within seven calendar days), "
@@ -54,7 +59,7 @@ def render_fundamentals_workspace(
     selected = "quarterly" if frequency == "Quarterly" else "annual"
     frame = result.quarterly if selected == "quarterly" else result.annual
     if frame.empty:
-        st.info(f"No verified {selected} SEC statement periods are available.")
+        st.info(f"No verified {selected} statement periods are available.")
         return
     st.markdown(kpi_grid_html(fundamentals_kpi_cards(result)), unsafe_allow_html=True)
     st.caption("Headline cards use the latest completed annual fiscal period and do not change with the chart horizon. ROE uses parent income and average parent equity; ROCE uses operating income over average assets less current liabilities. Both require compatible consecutive fiscal periods.")
@@ -77,9 +82,9 @@ def render_fundamentals_workspace(
         ) if column in frame]
         st.dataframe(frame[columns], width="stretch", hide_index=True)
     with st.expander("Financial Data Quality, coverage and source lineage", expanded=False):
-        st.caption("Company Facts is an entity-wide standard-concept aggregate. Figures are latest-disclosed and may include later revisions; they are not point-in-time valuation inputs.")
+        st.caption("Source-specific standard concepts and reported comparatives may include later revisions. Missing disclosure dates remain unverified; these are not point-in-time valuation inputs.")
         st.dataframe(result.coverage, width="stretch", hide_index=True)
         if not result.quality.empty:
             st.dataframe(result.quality.head(100), width="stretch", hide_index=True)
-        st.caption(f"SEC retrieval: {result.retrieved_at_utc} · mapped observations: {len(result.observations):,} · SHA-256: {result.source_sha256}")
+        st.caption(f"Source retrieval: {result.retrieved_at_utc} · mapped observations: {len(result.observations):,} · SHA-256: {result.source_sha256}")
         st.caption("Reported EPS is not normalized to today's share basis. EPS growth uses same-filing comparatives; multiyear growth chains only complete comparable pairs. Quarterly EPS is never derived by subtraction. ROCE uses operating income as an EBIT proxy and is withheld for financial-sector issuers. PPE cash payments are positive outflows. FCF = operating cash flow − verified PPE payments. NVIDIA's broader productive-asset spending includes software/intangibles and is not substituted for PPE CapEx. Acquisitions are excluded. Missing components are not zero. Reported long-term debt is partial, so net debt is withheld.")

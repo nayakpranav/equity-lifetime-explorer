@@ -35,7 +35,7 @@ def _status_for_inputs(current: pd.Series, prior: pd.Series, names: tuple[str, .
 
 
 def calculate_capital_efficiency(
-    annual: pd.DataFrame, *, financial_sector: bool = False,
+    annual: pd.DataFrame, *, financial_sector: bool = False, accounting_framework: str = "US_GAAP",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Use adjacent completed annual periods; never infer opening balances.
 
@@ -45,6 +45,14 @@ def calculate_capital_efficiency(
     """
     if annual.empty:
         return annual.copy(), pd.DataFrame()
+    if accounting_framework not in {"US_GAAP", "IFRS"}:
+        raise ValueError("Capital efficiency requires a verified accounting framework")
+    income_tag, equity_tag, operating_tag, liabilities_tag = (
+        ("NetIncomeLoss", "StockholdersEquity", "OperatingIncomeLoss", "LiabilitiesCurrent")
+        if accounting_framework == "US_GAAP" else
+        ("ProfitLossAttributableToOwnersOfParent", "EquityAttributableToOwnersOfParent",
+         "ProfitLossFromOperatingActivities", "CurrentLiabilities")
+    )
     output = annual.copy()
     for metric in ("roe", "roce"):
         output[f"{metric}_parent_observation_ids"] = pd.Series(
@@ -71,8 +79,8 @@ def calculate_capital_efficiency(
                     start = _number(prior.get("shareholders_equity"))
                     end = _number(current.get("shareholders_equity"))
                     if all(item is not None for item in (income, start, end)):
-                        if current.get("net_income_parent_source_tag") != "NetIncomeLoss" or any(
-                            item.get("shareholders_equity_source_tag") != "StockholdersEquity"
+                        if current.get("net_income_parent_source_tag") != income_tag or any(
+                            item.get("shareholders_equity_source_tag") != equity_tag
                             for item in (current, prior)
                         ):
                             status = "UNVERIFIED_ATTRIBUTION"
@@ -90,9 +98,9 @@ def calculate_capital_efficiency(
                         operating_income, current_assets, prior_assets,
                         current_liabilities, prior_liabilities,
                     )):
-                        if current.get("operating_income_source_tag") != "OperatingIncomeLoss" or any(
+                        if current.get("operating_income_source_tag") != operating_tag or any(
                             item.get("assets_source_tag") != "Assets"
-                            or item.get("current_liabilities_source_tag") != "LiabilitiesCurrent"
+                            or item.get("current_liabilities_source_tag") != liabilities_tag
                             for item in (current, prior)
                         ):
                             status = "UNVERIFIED_CAPITAL_BASIS"

@@ -34,6 +34,9 @@ def select_latest_disclosed(observations: pd.DataFrame) -> tuple[pd.DataFrame, p
         if pd.isna(newest["acceptance_timestamp_utc"]):
             peer = order.loc[order["filing_date"].eq(newest["filing_date"])
                              & order["acceptance_timestamp_utc"].isna()]
+            if pd.isna(newest["filing_date"]):
+                peer = order.loc[order["filing_date"].isna()
+                                 & order["acceptance_timestamp_utc"].isna()]
         if peer["value"].nunique() > 1:
             for row in group.itertuples():
                 decisions.append({"observation_id": row.observation_id, "decision": "excluded", "reason": "CONFLICTING_FACTS"})

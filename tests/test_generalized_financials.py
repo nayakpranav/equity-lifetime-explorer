@@ -184,7 +184,7 @@ def test_unavailable_states_distinguish_identity_data_basis_and_transport(synthe
 
 def test_foreign_listing_and_fund_do_not_call_sec(synthetic_result):
     provider = PayloadProvider(generic_payload())
-    assert run_fundamentals_analysis(replace(synthetic_result.metadata, ticker="SAP.DE"), provider=provider).status == "NON_SEC_SOURCE"
+    assert run_fundamentals_analysis(replace(synthetic_result.metadata, ticker="UNKNOWN.DE"), provider=provider).status == "NON_SEC_SOURCE"
     assert run_fundamentals_analysis(replace(synthetic_result.metadata, security_type="ETF"), provider=provider).status == "UNSUPPORTED_SECURITY"
     assert not provider.calls
 

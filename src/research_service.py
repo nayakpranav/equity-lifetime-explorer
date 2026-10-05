@@ -11,6 +11,8 @@ from .financials.analytics import build_period_table, calculate_fundamentals
 from .financials.capital_efficiency import calculate_capital_efficiency
 from .financials.concepts import AUDITED_CIKS, mappings_for, mapping_scope
 from .financials.normalization import normalize_sec_facts
+from .financials.ifrs_concepts import IFRS_MAPPING_VERSION, ifrs_mappings
+from .financials import MAPPING_VERSION
 from .financials.eps import add_eps_growth
 from .financials.quality import financial_coverage, financial_quality, statement_reconciliation
 from .financials.quarters import derive_standalone_quarters
@@ -19,6 +21,8 @@ from .models import AnalysisResult, CompanyMetadata
 from .providers.sec import (
     SecConfigurationError, SecFinancialProvider, SecTransportError, UnsupportedSecIdentity, UnsupportedReportingBasis, MissingStructuredData,
 )
+from .providers.sec_ifrs import GlobalSecFinancialProvider, SEC_LISTING_LINKS
+from .providers.esef_analysis import ESEF_LISTINGS, run_esef_analysis
 
 
 LOGGER = logging.getLogger("equity_lifetime_explorer.financials")
@@ -33,10 +37,12 @@ def run_fundamentals_analysis(
     ticker = metadata.ticker.upper().strip()
     if metadata.security_type and metadata.security_type.upper() in {"ETF", "FUND", "INDEX", "CURRENCY", "CRYPTOCURRENCY"}:
         return FundamentalsResult(ticker, "UNSUPPORTED_SECURITY", "Corporate statements do not apply to this security type.")
-    if "." in ticker and len(ticker.rsplit(".", 1)[1]) > 1:
+    if ticker in ESEF_LISTINGS and provider is None:
+        return run_esef_analysis(metadata, force_refresh=force_refresh)
+    if "." in ticker and len(ticker.rsplit(".", 1)[1]) > 1 and ticker not in SEC_LISTING_LINKS:
         return FundamentalsResult(ticker, "NON_SEC_SOURCE", "This foreign listing requires a financial source outside the current SEC implementation.")
     try:
-        source = provider or SecFinancialProvider()
+        source = provider or GlobalSecFinancialProvider()
         payload = source.fetch(metadata, force_refresh=force_refresh)
     except SecConfigurationError:
         return FundamentalsResult(ticker, "MISSING_SEC_IDENTITY", "SEC operator contact is not configured for this deployment.")
@@ -56,11 +62,14 @@ def run_fundamentals_analysis(
     if ticker in AUDITED_CIKS and payload.identity.cik != AUDITED_CIKS[ticker]:
         return FundamentalsResult(ticker, "UNRESOLVED_SEC_IDENTITY", "SEC issuer mapping differs from the audited pilot identity.")
     try:
+        is_ifrs = payload.taxonomy == "ifrs-full"
+        mappings = ifrs_mappings(payload.identity.reporting_currency) if is_ifrs else mappings_for(ticker, payload.identity.cik)
+        scope = "Exact standard IFRS concepts; issuer-specific audit not performed" if is_ifrs else mapping_scope(payload.identity.cik)
         observations = normalize_sec_facts(payload)
         if observations.empty:
-            return FundamentalsResult(ticker, "MISSING_INPUT", "Verified SEC issuer, but no compatible mapped USD financial facts were available.", identity=payload.identity,
-                coverage=financial_coverage(observations, observations, mappings_for(ticker, payload.identity.cik), source_facts=payload.facts, fiscal_year_end=payload.identity.fiscal_year_end),
-                metadata={"mapping_scope": mapping_scope(payload.identity.cik)})
+            return FundamentalsResult(ticker, "MISSING_INPUT", "Verified SEC issuer, but no compatible mapped native-currency financial facts were available.", identity=payload.identity,
+                coverage=financial_coverage(observations, observations, mappings, source_facts=payload.facts, fiscal_year_end=payload.identity.fiscal_year_end, taxonomy=payload.taxonomy),
+                metadata={"mapping_scope": scope})
         selected, decisions = select_latest_disclosed(observations)
         derived, quarter_issues = derive_standalone_quarters(selected)
         annual = build_period_table(selected, derived, frequency="annual")
@@ -71,15 +80,15 @@ def run_fundamentals_analysis(
         quarterly, quarter_ratios = calculate_fundamentals(quarterly, financial_sector=is_financial)
         annual, annual_eps_ratios = add_eps_growth(annual, observations, frequency="annual")
         quarterly, quarter_eps_ratios = add_eps_growth(quarterly, observations, frequency="quarterly")
-        annual, capital_ratios = calculate_capital_efficiency(annual, financial_sector=is_financial)
+        annual, capital_ratios = calculate_capital_efficiency(annual, financial_sector=is_financial,
+            accounting_framework="IFRS" if is_ifrs else "US_GAAP")
         ratios = pd.concat(
             [annual_ratios, quarter_ratios, annual_eps_ratios, quarter_eps_ratios, capital_ratios],
             ignore_index=True,
         )
-        mappings = mappings_for(ticker, payload.identity.cik)
         coverage = financial_coverage(
             observations, selected, mappings,
-            source_facts=payload.facts, fiscal_year_end=payload.identity.fiscal_year_end,
+            source_facts=payload.facts, fiscal_year_end=payload.identity.fiscal_year_end, taxonomy=payload.taxonomy,
         )
         quality = financial_quality(observations, decisions, quarter_issues)
         quality = pd.concat(
@@ -100,6 +109,8 @@ def run_fundamentals_analysis(
             observations=observations, annual=annual, quarterly=quarterly, ratios=ratios,
             coverage=coverage, quality=quality,
             retrieved_at_utc=payload.retrieved_at_utc, source_sha256=payload.source_sha256,
+            mapping_version=IFRS_MAPPING_VERSION if is_ifrs else MAPPING_VERSION,
+            source="SEC EDGAR · IFRS · annual 20-F/40-F" if is_ifrs else "SEC EDGAR Company Facts and submissions",
             metadata={
                 "acceptance_ledger_entries": len(payload.accession_ledger),
                 "older_submissions_loaded": payload.older_files_loaded,
@@ -108,7 +119,9 @@ def run_fundamentals_analysis(
                 "derived_quarters": len(derived),
                 "selection_decisions": decisions,
                 "quarter_diagnostics": quarter_issues,
-                "mapping_scope": mapping_scope(payload.identity.cik),
+                "mapping_scope": scope,
+                "accounting_framework": "IFRS" if is_ifrs else "US_GAAP",
+                "source_route": "SEC_EDGAR_IFRS" if is_ifrs else "SEC_EDGAR_US_GAAP",
                 "financial_sector": is_financial,
             },
         )

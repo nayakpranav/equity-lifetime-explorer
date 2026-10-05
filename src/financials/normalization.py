@@ -17,6 +17,7 @@ from ..providers.sec import SecFinancialPayload
 from . import MAPPING_VERSION, METHODOLOGY_VERSION
 from .concepts import ConceptMapping, mapping_scope, mappings_for
 from .periods import classify_period
+from .ifrs_concepts import IFRS_ANNUAL_FORMS, IFRS_MAPPING_VERSION, ifrs_mappings
 
 
 def _decimal_text(value: Any) -> str | None:
@@ -53,9 +54,11 @@ def _record(payload: SecFinancialPayload, mapping: ConceptMapping, unit: str, ro
     if mapping.sign == "positive_outflow" and value is not None and Decimal(value) < 0:
         flags.append("CAPEX_SIGN_ANOMALY")
     quality = "invalid" if value is None else "warning" if flags else "valid"
-    locator = f"/facts/us-gaap/{mapping.tag}/units/{unit}/{position}"
+    taxonomy = payload.taxonomy
+    locator = f"/facts/{taxonomy}/{mapping.tag}/units/{unit}/{position}"
     identity_key = json.dumps(
-        [identity.cik, mapping.tag, unit, position, row], sort_keys=True, separators=(",", ":")
+        [identity.cik, mapping.tag, unit, position, row] + ([taxonomy] if taxonomy != "us-gaap" else []),
+        sort_keys=True, separators=(",", ":")
     )
     observation_id = "sec:" + hashlib.sha256(identity_key.encode("utf-8")).hexdigest()[:24]
     source_url = (
@@ -65,11 +68,15 @@ def _record(payload: SecFinancialPayload, mapping: ConceptMapping, unit: str, ro
     return {
         "schema_version": "1.0.0", "observation_id": observation_id,
         "issuer_id": identity.issuer_id, "security_id": None, "ticker": identity.ticker,
-        "provider": "SEC_EDGAR", "taxonomy": "us-gaap", "provider_concept": mapping.tag,
+        "provider": "SEC_EDGAR", "taxonomy": taxonomy, "provider_concept": mapping.tag,
         "normalized_concept": mapping.concept, "statement_type": mapping.statement,
-        "mapping_version": MAPPING_VERSION, "context_type": mapping.context,
+        "mapping_version": MAPPING_VERSION if taxonomy == "us-gaap" else IFRS_MAPPING_VERSION, "context_type": mapping.context,
         "mapping_priority": mapping.priority, "mapping_basis": mapping.basis,
-        "mapping_scope": mapping_scope(identity.cik),
+        "mapping_scope": mapping_scope(identity.cik) if taxonomy == "us-gaap" else "Exact standard IFRS concepts; issuer-specific audit not performed",
+        "accounting_framework": "US_GAAP" if taxonomy == "us-gaap" else "IFRS",
+        "consolidation_basis": identity.consolidation_basis,
+        "audit_status": "unknown", "source_type": "PRIMARY_REGULATORY",
+        "source_version": taxonomy,
         "context_id": None, "dimensions_status": "omitted_by_provider", "dimensions": None,
         "period_start": start, "period_end": end, "fiscal_year": period.fiscal_year,
         "fiscal_quarter": period.fiscal_quarter, "raw_fiscal_year": row.get("fy"),
@@ -97,16 +104,19 @@ def _record(payload: SecFinancialPayload, mapping: ConceptMapping, unit: str, ro
 
 
 def normalize_sec_facts(payload: SecFinancialPayload) -> pd.DataFrame:
-    mappings = mappings_for(payload.identity.ticker, payload.identity.cik)
+    if payload.taxonomy not in {"us-gaap", "ifrs-full"}:
+        raise ValueError("Unsupported SEC financial taxonomy")
+    is_ifrs = payload.taxonomy == "ifrs-full"
+    mappings = ifrs_mappings(payload.identity.reporting_currency) if is_ifrs else mappings_for(payload.identity.ticker, payload.identity.cik)
     if not mappings:
         return pd.DataFrame()
-    gaap = payload.facts.get("facts", {}).get("us-gaap", {})
+    gaap = payload.facts.get("facts", {}).get(payload.taxonomy, {})
     records: list[dict] = []
     for mapping in mappings:
         concept = gaap.get(mapping.tag, {})
         rows = concept.get("units", {}).get(mapping.unit, [])
         for position, row in enumerate(rows):
-            if row.get("form") not in {"10-K", "10-Q", "10-K/A", "10-Q/A"}:
+            if row.get("form") not in (IFRS_ANNUAL_FORMS if is_ifrs else {"10-K", "10-Q", "10-K/A", "10-Q/A"}):
                 continue
             end = row.get("end")
             if not end or (mapping.first_end and end < mapping.first_end) or (mapping.last_end and end > mapping.last_end):

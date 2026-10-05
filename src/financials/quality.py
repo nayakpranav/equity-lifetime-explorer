@@ -12,13 +12,15 @@ from .periods import classify_period
 def financial_coverage(
     observations: pd.DataFrame, selected: pd.DataFrame,
     mappings: tuple[ConceptMapping, ...], *, source_facts: dict, fiscal_year_end: str,
+    taxonomy: str = "us-gaap",
 ) -> pd.DataFrame:
     records: list[dict] = []
     for concept in sorted({mapping.concept for mapping in mappings}):
         source_by_type: dict[str, set[str]] = {name: set() for name in ("annual", "quarter", "ytd", "instant")}
         for mapping in (item for item in mappings if item.concept == concept):
-            for row in source_facts.get("facts", {}).get("us-gaap", {}).get(mapping.tag, {}).get("units", {}).get(mapping.unit, []):
-                if row.get("form") not in {"10-K", "10-Q", "10-K/A", "10-Q/A"} or not row.get("end"):
+            for row in source_facts.get("facts", {}).get(taxonomy, {}).get(mapping.tag, {}).get("units", {}).get(mapping.unit, []):
+                forms = {"20-F", "20-F/A", "40-F", "40-F/A"} if taxonomy == "ifrs-full" else {"10-K", "10-Q", "10-K/A", "10-Q/A"}
+                if row.get("form") not in forms or not row.get("end"):
                     continue
                 try:
                     period_type = classify_period(row.get("start"), row["end"], fiscal_year_end, row.get("form")).period_type

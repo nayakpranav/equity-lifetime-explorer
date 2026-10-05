@@ -12,6 +12,7 @@ from .financial_models import FundamentalsResult
 from .models import AnalysisResult
 from .financial_ui import fundamentals_kpi_cards
 from .report_tables import report_table_html
+from .financials.presentation import financial_source_caption, price_overlay_unavailable_reason
 
 
 def _safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -52,7 +53,7 @@ def financial_ratios_csv(result: FundamentalsResult) -> bytes:
 
 def financial_provenance_csv(result: FundamentalsResult) -> bytes:
     if result.observations.empty:
-        raise ValueError("SEC observation provenance is unavailable")
+        raise ValueError("Financial observation provenance is unavailable")
     columns = [
         "observation_id", "issuer_id", "ticker", "provider", "taxonomy", "provider_concept",
         "normalized_concept", "context_type", "period_start", "period_end", "fiscal_year",
@@ -61,6 +62,9 @@ def financial_provenance_csv(result: FundamentalsResult) -> bytes:
         "source_record_locator", "source_sha256", "retrieved_at_utc",
         "revision_status", "quality_status", "quality_flags", "mapping_version",
         "mapping_priority", "mapping_basis", "mapping_scope",
+        "security_id", "accounting_framework", "consolidation_basis", "audit_status",
+        "source_type", "source_version", "original_value", "scale",
+        "availability_precision", "availability_policy",
     ]
     frame = result.observations[[column for column in columns if column in result.observations]].copy()
     decisions = result.metadata.get("selection_decisions")
@@ -71,7 +75,7 @@ def financial_provenance_csv(result: FundamentalsResult) -> bytes:
 
 def financial_quality_csv(result: FundamentalsResult) -> bytes:
     if not result.available:
-        raise ValueError("SEC financial quality report is unavailable")
+        raise ValueError("Financial quality report is unavailable")
     return financial_csv(result.quality)
 
 
@@ -84,6 +88,7 @@ def fundamentals_html(
     if theme not in THEMES:
         raise ValueError("theme must be dark or light")
     identity = result.identity
+    price_overlay = bool(price_overlay and price_overlay_unavailable_reason(result, market) is None)
     palette = THEMES[theme]
     figures = build_fundamentals_figures(result, theme=theme, market=market, price_overlay=price_overlay,
                                         frequency="annual" if not result.annual.empty else "quarterly")
@@ -139,15 +144,15 @@ h1{{font-size:clamp(27px,4vw,42px);margin:4px 0}}h2{{font-size:21px}}p,small{{co
 .hero,.panel{{padding:20px;margin:0 0 20px}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin:18px 0}}
 .card{{padding:15px;border-left:4px solid {palette['primary']}}}.card small{{display:block;font-size:10px;letter-spacing:.06em;margin-bottom:8px}}.card strong{{font-size:20px}}
 .table-wrap{{overflow:auto}}table{{border-collapse:collapse;width:100%;font-size:12px}}th,td{{padding:8px;border-bottom:1px solid {border};text-align:right;white-space:nowrap}}th:first-child,td:first-child{{text-align:left}}
-</style></head><body><main><header class='hero'><small>EQUITY LIFETIME EXPLORER · SEC EDGAR</small>
-<h1>{html.escape(identity.issuer_name)}</h1><p>Financial Fundamentals · {html.escape(identity.ticker)} · CIK {identity.cik} · {identity.reporting_currency} · {html.escape(result.latest_view)}</p></header>
+</style></head><body><main><header class='hero'><small>EQUITY LIFETIME EXPLORER · FINANCIAL FUNDAMENTALS</small>
+<h1>{html.escape(identity.issuer_name)}</h1><p>{html.escape(financial_source_caption(result))} · {html.escape(result.latest_view)}</p></header>
 <section class='panel'><p>{html.escape(result.metadata.get('mapping_scope', 'Issuer-specific audited override'))}. {html.escape(result.reason)}</p></section>
 <div class='cards'>{cards}</div>{("<section class='panel'><p>Optional share-price overlay: split-adjusted current-share price, excluding dividend reinvestment, aligned to the latest close on or before each fiscal-period end (within seven calendar days). Financial results were disclosed later; this is not an as-known-at-date comparison.</p></section>" if price_overlay else "")}{''.join(chart_sections)}
 <section class='panel'><h2>Annual Statement Summary</h2><div class='table-wrap'>{annual_table}</div></section>
 <section class='panel'><h2>Standalone Quarterly Statement Summary</h2><div class='table-wrap'>{quarterly_table}</div></section>
-<section class='panel'><h2>Financial Data Quality</h2><h3>SEC Concept Coverage</h3><div class='table-wrap'>{coverage_table}</div><h3>Financial Quality Flags</h3><div class='table-wrap'>{quality_table}</div><h3>Recent Filing &amp; Acceptance Lineage</h3><div class='table-wrap'>{lineage_table}</div></section>
-<section class='panel'><h2>Methodology and Provenance</h2><p>Company Facts supplies standard entity-wide reported facts. This is latest-disclosed history and may include later revisions. It is not point-in-time historical valuation data. The SEC NetIncomeLoss tag means net income attributable to the parent. Monetary quarterly cash flows are reconstructed only from compatible cumulative filings; quarterly EPS is never subtracted. Reported basic and diluted EPS retain their original, unnormalized share basis. EPS growth uses same-filing comparatives, and multiyear growth chains only complete comparable pairs. ROE uses parent income divided by average parent equity. ROCE uses operating income as an EBIT proxy divided by average (assets less current liabilities), when adjacent periods are compatible. Missing values are unavailable, not zero. PPE cash payments are positive outflows; ordinary FCF equals OCF less those payments. Acquisitions are excluded. NVIDIA's productive-asset spending includes intangible assets and is not silently substituted for PPE. Reported long-term debt is not a verified complete debt total, so net debt is unavailable.</p>
-<p>Source: SEC EDGAR Company Facts and submissions · Retrieved {html.escape(result.retrieved_at_utc or '')} · Mapping {html.escape(result.mapping_version)} · Source SHA-256 {html.escape(result.source_sha256 or '')}</p>
+<section class='panel'><h2>Financial Data Quality</h2><h3>Source Concept Coverage</h3><div class='table-wrap'>{coverage_table}</div><h3>Financial Quality Flags</h3><div class='table-wrap'>{quality_table}</div><h3>Recent Filing &amp; Acceptance Lineage</h3><div class='table-wrap'>{lineage_table}</div></section>
+<section class='panel'><h2>Methodology and Provenance</h2><p>Exact standard concepts are extracted from the identified reporting framework; issuer extensions are not guessed. Reported comparatives may include later revisions. Repository ingestion is not a verified publication or acceptance date. This is not point-in-time historical valuation data. Only compatible parent-attributable income is mapped. Monetary quarterly cash flows are reconstructed only from compatible cumulative filings; quarterly EPS is never subtracted. Reported basic and diluted EPS retain their original, unnormalized share basis. EPS growth uses same-filing comparatives with verified acceptance dates, and multiyear growth chains only complete comparable pairs. ROE uses parent income divided by average parent equity. ROCE uses operating income as an EBIT proxy divided by average (assets less current liabilities), when adjacent periods are compatible; industrial ROCE and FCF are withheld for financial-sector issuers. Missing values are unavailable, not zero. PPE cash payments are positive outflows; ordinary FCF equals OCF less those payments. Acquisitions are excluded. NVIDIA's productive-asset spending includes intangible assets and is not silently substituted for PPE. Reported long-term debt is not a verified complete debt total, so net debt is unavailable. Native statement currency is retained without FX conversion. Foreign security/share-basis comparisons require separate verification.</p>
+<p>Source: {html.escape(result.source)} · Framework {html.escape(identity.accounting_framework)} · Retrieved {html.escape(result.retrieved_at_utc or '')} · Mapping {html.escape(result.mapping_version)} · Source SHA-256 {html.escape(result.source_sha256 or '')}</p>
 <p>For informational and research purposes only. No historical valuation multiples are calculated in this release.</p></section>
 </main></body></html>"""
     return document.encode("utf-8")

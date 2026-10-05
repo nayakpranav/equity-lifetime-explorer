@@ -38,7 +38,7 @@ def classify_period(start: str | None, end: str, fiscal_year_end: str, form: str
         return FiscalPeriod(None, None, "unknown", "unknown")
     fiscal_year, quarter, _ = nearest
     if not start:
-        frequency = "annual" if form in {"10-K", "10-K/A", "20-F", "20-F/A"} else "quarterly"
+        frequency = "annual" if form in {"10-K", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A", "ESEF"} else "quarterly"
         return FiscalPeriod(fiscal_year, quarter, "instant", frequency)
     start_date = pd.Timestamp(start)
     days = (end_date - start_date).days + 1

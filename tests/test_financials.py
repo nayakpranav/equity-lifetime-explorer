@@ -341,7 +341,7 @@ def _eps_observations() -> pd.DataFrame:
                     "normalized_concept": concept, "provider_concept": tag,
                     "period_type": "annual", "fiscal_year": year, "fiscal_quarter": 4,
                     "period_end": f"{year}-06-30", "quality_status": "valid",
-                    "unit": "USD/shares", "accession": accession,
+                    "unit": "USD/shares", "currency": "USD", "taxonomy": "us-gaap", "accession": accession,
                     "acceptance_timestamp_utc": f"{current_year}-08-01T16:00:00+00:00",
                     "value": value,
                 })
@@ -414,7 +414,7 @@ def test_fcf_capex_sign_growth_and_incomplete_debt_are_status_bearing():
 
 def test_non_sec_source_leaves_market_analysis_separate(synthetic_result):
     from dataclasses import replace
-    unsupported = run_fundamentals_analysis(replace(synthetic_result.metadata, ticker="SAP.DE"))
+    unsupported = run_fundamentals_analysis(replace(synthetic_result.metadata, ticker="UNKNOWN.DE"))
     assert unsupported.status == "NON_SEC_SOURCE"
     assert unsupported.annual.empty
     assert synthetic_result.metrics
@@ -480,7 +480,7 @@ def test_financial_html_combined_csv_and_packages(synthetic_result, theme):
     assert b"Financial Fundamentals" in selected.payload
     combined = combined_research_html(synthetic_result, fundamentals=financials, theme=theme)
     assert b"id='fundamentals'" in combined
-    assert b"Annual SEC Statement Summary" in combined
+    assert b"Annual Statement Summary" in combined
     assert combined.count(b"https://cdn.plot.ly/") == 1
     portable = export_bundle(synthetic_result, ["combined_html"], fundamentals=financials, portable_html=True)
     assert next(iter(portable.values())).count(b"plotly.js v") == 1
@@ -535,6 +535,7 @@ def test_eps_and_capital_charts_use_fiscal_categories_and_horizon():
 
 
 def test_financial_workspace_and_download_selection_do_not_retrieve_again(monkeypatch, synthetic_result):
+    synthetic_result.metadata.currency = "USD"
     calls = {"market": 0, "sec": 0}
 
     def fake_market(ticker, **kwargs):
@@ -543,7 +544,9 @@ def test_financial_workspace_and_download_selection_do_not_retrieve_again(monkey
 
     def fake_sec(metadata, **kwargs):
         calls["sec"] += 1
-        return _fundamentals()
+        result = _fundamentals()
+        result.ticker = metadata.ticker
+        return result
 
     monkeypatch.setattr(market_service, "run_equity_analysis", fake_market)
     monkeypatch.setattr(research_service, "run_fundamentals_analysis", fake_sec)
@@ -566,8 +569,8 @@ def test_financial_workspace_and_download_selection_do_not_retrieve_again(monkey
     assert not app.exception
     choices = {control.label: control for control in app.checkbox}
     assert choices["Financial Fundamentals HTML"].disabled is False
-    assert choices["SEC Annual Financials CSV"].disabled is False
-    assert choices["SEC Financial Quality CSV"].disabled is False
+    assert choices["Annual Financials CSV"].disabled is False
+    assert choices["Financial Quality CSV"].disabled is False
     assert calls == {"market": 1, "sec": 1}
 
 
@@ -648,6 +651,7 @@ def test_fiscal_end_overlay_uses_existing_split_adjusted_close_without_lookahead
 
 
 def test_financial_price_overlay_is_optional_and_propagates_to_reports(synthetic_result):
+    synthetic_result.metadata.currency = "USD"
     financials = _fundamentals()
     financials.ticker = synthetic_result.ticker
     base = build_fundamentals_figures(financials)

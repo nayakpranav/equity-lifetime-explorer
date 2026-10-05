@@ -20,7 +20,7 @@ def _same_filing_pair(
         & observations["fiscal_quarter"].eq(quarter)
         & observations["fiscal_year"].isin([fiscal_year - 1, fiscal_year])
         & observations["quality_status"].ne("invalid")
-        & observations["unit"].eq("USD/shares")
+        & observations["unit"].str.fullmatch(r"[A-Z]{3}/shares", na=False)
         & observations["accession"].notna()
         & observations["acceptance_timestamp_utc"].notna()
     ]
@@ -31,7 +31,11 @@ def _same_filing_pair(
         if current.empty or prior.empty or current.value.nunique() != 1 or prior.value.nunique() != 1:
             continue
         current_row, prior_row = current.iloc[-1], prior.iloc[-1]
-        if current_row["issuer_id"] != prior_row["issuer_id"] or current_row["provider_concept"] != prior_row["provider_concept"]:
+        if (current_row["issuer_id"] != prior_row["issuer_id"]
+            or current_row["provider_concept"] != prior_row["provider_concept"]
+            or current_row["unit"] != prior_row["unit"]
+            or current_row["currency"] != prior_row["currency"]
+            or current_row["taxonomy"] != prior_row["taxonomy"]):
             continue
         days = (pd.Timestamp(current_row["period_end"]) - pd.Timestamp(prior_row["period_end"])).days
         if not 340 <= days <= 385:

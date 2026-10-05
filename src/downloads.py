@@ -23,11 +23,11 @@ DATA_EXPORTS = (
     ("actions_csv", "Corporate Actions Ledger CSV"),
     ("dividend_csv", "Dividend Annual Summary CSV"),
     ("validation_csv", "Data Quality / Validation CSV"),
-    ("financial_annual_csv", "SEC Annual Financials CSV"),
-    ("financial_quarterly_csv", "SEC Standalone Quarterly Financials CSV"),
+    ("financial_annual_csv", "Annual Financials CSV"),
+    ("financial_quarterly_csv", "Standalone Quarterly Financials CSV"),
     ("financial_ratios_csv", "Financial Ratios CSV"),
-    ("financial_provenance_csv", "SEC Financial Provenance CSV"),
-    ("financial_quality_csv", "SEC Financial Quality CSV"),
+    ("financial_provenance_csv", "Financial Provenance CSV"),
+    ("financial_quality_csv", "Financial Quality CSV"),
 )
 
 
@@ -46,7 +46,7 @@ def export_unavailability_reason(
         return None if result.dividend_status != "NONE" else "No provider-reported cash-dividend history."
     if key.startswith("financial_") or key == "fundamentals_html":
         if fundamentals is None:
-            return "Run ANALYZE to check SEC financial availability."
+            return "Run ANALYZE to check financial-source availability."
         if key == "financial_provenance_csv" and fundamentals.available and not fundamentals.observations.empty:
             return None
         if key == "financial_quality_csv" and fundamentals.available:
@@ -157,7 +157,7 @@ def prepare_complete_package(
             f"Financial Fundamentals status: {fundamentals.status}\n"
             f"Source: {fundamentals.source}\n"
             f"Retrieved: {fundamentals.retrieved_at_utc or 'unavailable'}\n"
-            + ("Excluded: \n" + "\n".join(excluded) if excluded else "All available SEC outputs included.")
+            + ("Excluded: \n" + "\n".join(excluded) if excluded else "All available financial outputs included.")
         ).encode("utf-8")
     filename = f"{safe_ticker(result.ticker)}_Equity_Lifetime_Explorer_{report_date}.zip"
     return PreparedDownload(

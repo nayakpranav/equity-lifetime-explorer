@@ -12,6 +12,7 @@ from ..config import THEMES
 from ..financial_models import FundamentalsResult
 from ..models import AnalysisResult
 from ..financials.horizons import filter_financial_horizon
+from ..financials.presentation import price_overlay_unavailable_reason
 from ..formatting import currency_parts
 
 
@@ -104,7 +105,7 @@ def build_fundamentals_figures(
     if frame.empty:
         return OrderedDict()
     frame = _display_frame(frame.sort_values(["fiscal_year", "fiscal_quarter"]), frequency)
-    overlay_enabled = bool(price_overlay and market is not None and market.ticker == result.ticker)
+    overlay_enabled = bool(price_overlay and price_overlay_unavailable_reason(result, market) is None)
     aligned_price, price_dates = align_split_adjusted_price(frame, market if overlay_enabled else None)
     has_overlay = overlay_enabled and any(value is not None for value in aligned_price)
 

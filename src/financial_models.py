@@ -24,6 +24,10 @@ class SecurityIdentity:
     identity_method: str = "exact_ticker"
     sic: str | None = None
     sic_description: str | None = None
+    accounting_framework: str = "US_GAAP"
+    consolidation_basis: str = "unknown"
+    identity_evidence_url: str | None = None
+    share_basis_verified: bool = False
 
 
 @dataclass

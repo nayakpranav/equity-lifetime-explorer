@@ -49,6 +49,7 @@ class SecFinancialPayload:
     source_sha256: str
     older_file_count: int
     older_files_loaded: int
+    taxonomy: str = "us-gaap"
 
 
 _RATE_LOCK = threading.Lock()

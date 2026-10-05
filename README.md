@@ -159,10 +159,19 @@ MIT. See [LICENSE](LICENSE).
 
 ## Release A.2 development status
 
-The isolated `feature/global-financials-release-a2` branch contains an initial
-source-routing policy, separate exact IFRS registry and bounded ESEF extraction
-foundation. These are not yet integrated into the production workspace or
-exports. See [source feasibility and outstanding release gates](RELEASE_A2_SOURCE_FEASIBILITY.md).
+The isolated `feature/global-financials-release-a2` branch now integrates
+SEC IFRS annual 20-F/40-F facts and verified European ESEF listing routes with
+the existing Financial Fundamentals workspace and HTML/CSV/ZIP exports.
+Native statement currencies are retained. ESEF uses one coherent latest
+repository report and its comparatives, not an invented disclosure chronology.
+Foreign price overlays require verified listing/share compatibility and equal
+statement/trading currencies. India acquisition/import work remains incomplete;
+this branch is **not approved for merge or deployment**.
+See [implementation evidence and remaining gates](RELEASE_A2_PROGRESS.md) and
+[source feasibility](RELEASE_A2_SOURCE_FEASIBILITY.md).
 Do not interpret passing foundation tests as completion of the global-source
 release. Its optional public ESEF extraction check is enabled with
 `RUN_ESEF_INTEGRATION=1 pytest -q tests/test_integration_esef.py`.
+The integrated international export checks are in
+`tests/test_integration_global_financials.py`; enable `RUN_SEC_INTEGRATION=1`
+with private SEC configuration and/or `RUN_ESEF_INTEGRATION=1`.
