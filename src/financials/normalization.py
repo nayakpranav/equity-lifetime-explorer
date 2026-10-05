@@ -155,9 +155,10 @@ def validate_observation(record: dict) -> None:
     _VALIDATOR.validate(record)
     if record["context_type"] == "duration" and record["period_start"] > record["period_end"]:
         raise ValueError("Duration start exceeds period end")
-    if record["unit"] == "USD/shares" and record["normalized_concept"] not in {"eps_basic", "eps_diluted"}:
+    if record["unit"].endswith("/shares") and record["normalized_concept"] not in {"eps_basic", "eps_diluted"}:
         raise ValueError("Per-share unit on non-EPS concept")
-    if record["unit"] == "USD" and record["currency"] != "USD":
+    money_unit = record["unit"].removesuffix("/shares")
+    if len(money_unit) == 3 and money_unit.isupper() and record["currency"] != money_unit:
         raise ValueError("Money unit/currency mismatch")
     if record["value"] is not None and not Decimal(record["value"]).is_finite():
         raise ValueError("Non-finite financial value")

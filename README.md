@@ -156,3 +156,13 @@ price that would necessarily have prevailed without corporate actions.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Release A.2 development status
+
+The isolated `feature/global-financials-release-a2` branch contains an initial
+source-routing policy, separate exact IFRS registry and bounded ESEF extraction
+foundation. These are not yet integrated into the production workspace or
+exports. See [source feasibility and outstanding release gates](RELEASE_A2_SOURCE_FEASIBILITY.md).
+Do not interpret passing foundation tests as completion of the global-source
+release. Its optional public ESEF extraction check is enabled with
+`RUN_ESEF_INTEGRATION=1 pytest -q tests/test_integration_esef.py`.

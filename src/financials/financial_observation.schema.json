@@ -5,6 +5,11 @@
   "description": "Release A canonical observation contract. Structural validation does not replace fiscal, semantic, currency, vintage or availability checks.",
   "type": "object",
   "properties": {
+    "accounting_framework": {"enum": ["US_GAAP", "IFRS", "IND_AS", "UNKNOWN"]},
+    "consolidation_basis": {"enum": ["consolidated", "standalone", "unknown"]},
+    "audit_status": {"enum": ["audited", "reviewed", "unaudited", "unknown"]},
+    "source_type": {"enum": ["PRIMARY_REGULATORY", "OFFICIAL_ISSUER", "USER_SUPPLIED_OFFICIAL_FILING"]},
+    "source_version": {"type": ["string", "null"]},
     "schema_version": {
       "const": "1.0.0"
     },
@@ -29,6 +34,8 @@
     "provider": {
       "enum": [
         "SEC_EDGAR",
+        "FILINGS_XBRL_ORG",
+        "OFFICIAL_FILING_IMPORT",
         "YAHOO",
         "FMP",
         "EODHD",
