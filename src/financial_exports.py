@@ -33,7 +33,7 @@ def financial_csv(frame: pd.DataFrame) -> bytes:
 
 
 def annual_financial_csv(result: FundamentalsResult) -> bytes:
-    if not result.available:
+    if not result.available or result.annual.empty:
         raise ValueError("Financial annual statements are unavailable")
     return financial_csv(result.annual)
 
@@ -60,6 +60,7 @@ def financial_provenance_csv(result: FundamentalsResult) -> bytes:
         "currency", "unit", "value", "accession", "form", "source_url",
         "source_record_locator", "source_sha256", "retrieved_at_utc",
         "revision_status", "quality_status", "quality_flags", "mapping_version",
+        "mapping_priority", "mapping_basis", "mapping_scope",
     ]
     frame = result.observations[[column for column in columns if column in result.observations]].copy()
     decisions = result.metadata.get("selection_decisions")
@@ -84,7 +85,8 @@ def fundamentals_html(
         raise ValueError("theme must be dark or light")
     identity = result.identity
     palette = THEMES[theme]
-    figures = build_fundamentals_figures(result, theme=theme, market=market, price_overlay=price_overlay)
+    figures = build_fundamentals_figures(result, theme=theme, market=market, price_overlay=price_overlay,
+                                        frequency="annual" if not result.annual.empty else "quarterly")
     include_js: str | bool = True if portable else "cdn"
     chart_sections = []
     for index, (heading, figure) in enumerate(figures.items()):
@@ -106,8 +108,15 @@ def fundamentals_html(
         "eps_basic_cagr_3y", "eps_diluted_cagr_3y", "roe", "roe_status",
         "roce", "roce_status", "cash_equivalents",
         "reported_long_term_debt", "fcf_status", "net_debt_status",
+        "gross_profit", "assets", "liabilities", "current_assets", "current_liabilities", "shareholders_equity",
+        "long_term_debt_noncurrent", "long_term_debt_current", "short_term_borrowings", "commercial_paper",
     ) if column in result.annual]
     annual_table = report_table_html(result.annual, identity.reporting_currency, columns=annual_columns)
+    quarterly_table = report_table_html(result.quarterly, identity.reporting_currency, columns=[
+        "fiscal_year", "fiscal_quarter", "period_end", "currency", "revenue", "gross_profit",
+        "operating_income", "net_income_parent", "eps_basic", "eps_diluted", "ocf", "capex_ppe", "fcf", "fcf_status",
+        "cash_equivalents", "assets", "liabilities", "current_assets", "current_liabilities", "shareholders_equity",
+    ])
     coverage_table = report_table_html(result.coverage, identity.reporting_currency)
     quality_table = report_table_html(result.quality.head(50), identity.reporting_currency)
     lineage = result.observations
@@ -132,8 +141,10 @@ h1{{font-size:clamp(27px,4vw,42px);margin:4px 0}}h2{{font-size:21px}}p,small{{co
 .table-wrap{{overflow:auto}}table{{border-collapse:collapse;width:100%;font-size:12px}}th,td{{padding:8px;border-bottom:1px solid {border};text-align:right;white-space:nowrap}}th:first-child,td:first-child{{text-align:left}}
 </style></head><body><main><header class='hero'><small>EQUITY LIFETIME EXPLORER · SEC EDGAR</small>
 <h1>{html.escape(identity.issuer_name)}</h1><p>Financial Fundamentals · {html.escape(identity.ticker)} · CIK {identity.cik} · {identity.reporting_currency} · {html.escape(result.latest_view)}</p></header>
+<section class='panel'><p>{html.escape(result.metadata.get('mapping_scope', 'Issuer-specific audited override'))}. {html.escape(result.reason)}</p></section>
 <div class='cards'>{cards}</div>{("<section class='panel'><p>Optional share-price overlay: split-adjusted current-share price, excluding dividend reinvestment, aligned to the latest close on or before each fiscal-period end (within seven calendar days). Financial results were disclosed later; this is not an as-known-at-date comparison.</p></section>" if price_overlay else "")}{''.join(chart_sections)}
 <section class='panel'><h2>Annual Statement Summary</h2><div class='table-wrap'>{annual_table}</div></section>
+<section class='panel'><h2>Standalone Quarterly Statement Summary</h2><div class='table-wrap'>{quarterly_table}</div></section>
 <section class='panel'><h2>Financial Data Quality</h2><h3>SEC Concept Coverage</h3><div class='table-wrap'>{coverage_table}</div><h3>Financial Quality Flags</h3><div class='table-wrap'>{quality_table}</div><h3>Recent Filing &amp; Acceptance Lineage</h3><div class='table-wrap'>{lineage_table}</div></section>
 <section class='panel'><h2>Methodology and Provenance</h2><p>Company Facts supplies standard entity-wide reported facts. This is latest-disclosed history and may include later revisions. It is not point-in-time historical valuation data. The SEC NetIncomeLoss tag means net income attributable to the parent. Monetary quarterly cash flows are reconstructed only from compatible cumulative filings; quarterly EPS is never subtracted. Reported basic and diluted EPS retain their original, unnormalized share basis. EPS growth uses same-filing comparatives, and multiyear growth chains only complete comparable pairs. ROE uses parent income divided by average parent equity. ROCE uses operating income as an EBIT proxy divided by average (assets less current liabilities), when adjacent periods are compatible. Missing values are unavailable, not zero. PPE cash payments are positive outflows; ordinary FCF equals OCF less those payments. Acquisitions are excluded. NVIDIA's productive-asset spending includes intangible assets and is not silently substituted for PPE. Reported long-term debt is not a verified complete debt total, so net debt is unavailable.</p>
 <p>Source: SEC EDGAR Company Facts and submissions · Retrieved {html.escape(result.retrieved_at_utc or '')} · Mapping {html.escape(result.mapping_version)} · Source SHA-256 {html.escape(result.source_sha256 or '')}</p>

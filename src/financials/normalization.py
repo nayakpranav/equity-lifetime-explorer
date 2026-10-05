@@ -15,7 +15,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from ..providers.sec import SecFinancialPayload
 from . import MAPPING_VERSION, METHODOLOGY_VERSION
-from .concepts import ConceptMapping, mappings_for
+from .concepts import ConceptMapping, mapping_scope, mappings_for
 from .periods import classify_period
 
 
@@ -68,6 +68,8 @@ def _record(payload: SecFinancialPayload, mapping: ConceptMapping, unit: str, ro
         "provider": "SEC_EDGAR", "taxonomy": "us-gaap", "provider_concept": mapping.tag,
         "normalized_concept": mapping.concept, "statement_type": mapping.statement,
         "mapping_version": MAPPING_VERSION, "context_type": mapping.context,
+        "mapping_priority": mapping.priority, "mapping_basis": mapping.basis,
+        "mapping_scope": mapping_scope(identity.cik),
         "context_id": None, "dimensions_status": "omitted_by_provider", "dimensions": None,
         "period_start": start, "period_end": end, "fiscal_year": period.fiscal_year,
         "fiscal_quarter": period.fiscal_quarter, "raw_fiscal_year": row.get("fy"),

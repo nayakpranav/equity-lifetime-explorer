@@ -1,4 +1,4 @@
-"""Explicit pilot-issuer SEC tags; absence is a gap, never a fuzzy fallback."""
+"""Explicit standard concepts and audited issuer overrides; no fuzzy matching."""
 
 from __future__ import annotations
 
@@ -15,14 +15,19 @@ class ConceptMapping:
     sign: str = "as_reported"
     first_end: str | None = None
     last_end: str | None = None
+    priority: int = 0
+    basis: str = "standard"
 
 
-PILOT_CIKS = {
+AUDITED_CIKS = {
     "MSFT": "0000789019",
     "KO": "0000021344",
     "AAPL": "0000320193",
     "NVDA": "0001045810",
 }
+
+# Backwards-compatible name for the regression matrix, never an eligibility gate.
+PILOT_CIKS = AUDITED_CIKS
 
 # These are standard, entity-wide concepts present in the inspected Company Facts
 # payloads. Revenue transitions are explicit; differing tags are never summed.
@@ -61,10 +66,37 @@ REVENUE_MAPPINGS = {
 }
 
 
+GENERAL_REVENUE = (
+    ConceptMapping("revenue", "RevenueFromContractWithCustomerExcludingAssessedTax", "income", priority=0, basis="net_revenue"),
+    ConceptMapping("revenue", "SalesRevenueNet", "income", priority=1, basis="net_revenue"),
+    ConceptMapping("revenue", "Revenues", "income", priority=2, basis="reported_revenue"),
+    ConceptMapping("revenue", "RevenueFromContractWithCustomerIncludingAssessedTax", "income", priority=3, basis="revenue_including_assessed_tax"),
+)
+
+# Components retain their definitions. They are never summed into an assumed
+# complete debt total or substituted for parent equity / parent net income.
+DEBT_COMPONENTS = (
+    ConceptMapping("long_term_debt_noncurrent", "LongTermDebtNoncurrent", "balance_sheet", context="instant"),
+    ConceptMapping("long_term_debt_current", "LongTermDebtCurrent", "balance_sheet", context="instant"),
+    ConceptMapping("short_term_borrowings", "ShortTermBorrowings", "balance_sheet", context="instant"),
+    ConceptMapping("commercial_paper", "CommercialPaper", "balance_sheet", context="instant"),
+)
+
+
+def audited_issuer(cik: str) -> str | None:
+    return next((ticker for ticker, value in AUDITED_CIKS.items() if value == cik), None)
+
+
+def mapping_scope(cik: str) -> str:
+    return "Audited issuer override" if audited_issuer(cik) else "General standard-concept mapping; issuer-specific audit not performed"
+
+
 def mappings_for(ticker: str, cik: str) -> tuple[ConceptMapping, ...]:
-    if PILOT_CIKS.get(ticker) != cik:
-        return ()
-    if ticker == "NVDA":
+    del ticker  # Accounting mappings belong to the verified issuer, not a share class.
+    issuer = audited_issuer(cik)
+    if issuer is None:
+        return (*GENERAL_REVENUE, *COMMON_MAPPINGS, *DEBT_COMPONENTS)
+    if issuer == "NVDA":
         # A broader reported productive-asset cash payment, separately named.
         # It includes software/intangibles and is NOT silently substituted for PPE CapEx.
         productive = (ConceptMapping(
@@ -73,4 +105,4 @@ def mappings_for(ticker: str, cik: str) -> tuple[ConceptMapping, ...]:
         ),)
     else:
         productive = ()
-    return (*REVENUE_MAPPINGS[ticker], *COMMON_MAPPINGS, *productive)
+    return (*REVENUE_MAPPINGS[issuer], *COMMON_MAPPINGS, *productive)

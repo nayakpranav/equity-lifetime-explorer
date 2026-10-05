@@ -28,10 +28,18 @@ def select_latest_disclosed(observations: pd.DataFrame) -> tuple[pd.DataFrame, p
             order["filing_date"].eq(newest["filing_date"])
             & order["acceptance_timestamp_utc"].eq(newest["acceptance_timestamp_utc"])
         ]
+        # Equal alternatives use the declared priority; conflicting alternatives
+        # at the newest disclosure are withheld, never summed. Same-day facts
+        # without acceptance timestamps still form one comparison group.
+        if pd.isna(newest["acceptance_timestamp_utc"]):
+            peer = order.loc[order["filing_date"].eq(newest["filing_date"])
+                             & order["acceptance_timestamp_utc"].isna()]
         if peer["value"].nunique() > 1:
             for row in group.itertuples():
                 decisions.append({"observation_id": row.observation_id, "decision": "excluded", "reason": "CONFLICTING_FACTS"})
             continue
+        if "mapping_priority" in peer and len(peer) > 1:
+            newest = peer.sort_values(["mapping_priority", "observation_id"], kind="stable").iloc[0]
         selected_ids.add(newest["observation_id"])
     for row in observations.itertuples():
         if row.observation_id in selected_ids:

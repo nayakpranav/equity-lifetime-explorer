@@ -16,12 +16,12 @@ provider-adjusted total-return proxy.
 
 - Dynamic Yahoo-style symbols including `BRK-B`, `SAP.DE`, `RELIANCE.NS`, and `7203.T`.
 - Explicit **ANALYZE** action with a 12-hour Streamlit cache; theme and workspace changes do not redownload data.
-- Four lazily selected workspaces on the Release A feature branch: **Price & Ownership**, **Volume & Liquidity**, **Dividends & Total Return**, and **Financial Fundamentals**. The fourth workspace does not change the existing market calculations.
+- Four lazily selected workspaces: **Price & Ownership**, **Volume & Liquidity**, **Dividends & Total Return**, and **Financial Fundamentals**. The fourth workspace does not change the existing market calculations.
 - Corporate-action ledger, validation audit, provider provenance, and graceful missing-data states.
 - Event-preserving display downsampling while calculations and CSV exports retain every daily observation.
 - In-memory standalone HTML, CSV, and complete ZIP downloads; no persistent server storage is assumed.
 - Dark and light Plotly themes with native Streamlit controls.
-- Pilot SEC EDGAR annual/quarterly statements for **MSFT, KO, AAPL and NVDA**, with exact ticker/CIK checks, filing/acceptance lineage, source hashes, quality flags and explicit missing-data states.
+- Generalized SEC EDGAR annual/quarterly statements for verified U.S. GAAP 10-K/10-Q corporate issuers, with exact ticker/CIK checks, filing/acceptance lineage, source hashes, quality flags and explicit missing-data states. The original MSFT/KO/AAPL/NVDA audited overrides are retained by issuer identity.
 - Reported basic/diluted EPS, same-filing comparative EPS growth, conservative parent-attributable ROE, and an explicitly qualified operating-income-basis ROCE. Financial charts offer display-only **1Y / 3Y / 5Y / 10Y / MAX** horizons.
 
 ## Methodology
@@ -60,11 +60,11 @@ the provider genuinely supplied it.
 
 ### Release A Financial Fundamentals
 
-The financial layer uses the SEC's public [Company Facts and submissions APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces). It maps only audited standard `us-gaap` concepts for the four pilot issuers. Normalized observations retain accession, fiscal dates, filing and acceptance timestamps, original unit, exact decimal value, revision status, and source lineage. Historical statements are **latest-disclosed**, not point-in-time as-known-at-date valuation inputs. The full observation ledger and selection decisions are exportable.
+The financial layer uses the SEC's public [Company Facts and submissions APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces). Release A.1 adds explicit standard `us-gaap` mappings for eligible corporate issuers outside the original four-company pilot. These generalized mappings are **not issuer-specifically audited**; their scope is identified in the UI and reports. Normalized observations retain accession, fiscal dates, filing and acceptance timestamps, original unit, exact decimal value, revision status, source concept, mapping basis/priority and selection lineage. Historical statements are **latest-disclosed**, not point-in-time as-known-at-date valuation inputs. The full observation ledger and selection decisions are exportable.
 
 Annual and standalone quarterly views keep duration flows distinct from instant balance-sheet facts. Compatible cumulative monetary flows may be subtracted to derive a standalone quarter; EPS is never derived this way. PPE capital spending is a positive cash outflow; ordinary free cash flow is operating cash flow less verified PPE spending, excluding acquisitions. Missing inputs are not treated as zero. Revenue, operating income, **parent-attributable** net income, EPS, cash flows, cash, reported long-term debt, margins and compatible growth rates are surfaced only when supported. Reported long-term debt is **not** a complete debt total, so total debt and net debt are deliberately withheld. No historical valuation multiples are calculated in Release A.
 
-The pilot is explicitly limited to U.S. reporting issuers and USD concepts. NVDA's recent broader productive-asset-spending disclosure is kept separate from PPE capital spending, so latest PPE-basis FCF remains unavailable. Company Facts omits custom company-specific tags; broader issuer coverage requires further concept audits. An unavailable SEC module does not prevent the original market workspaces from working. See [Release A hardening and Release B readiness](RELEASE_A_HARDENING.md) for pilot coverage, ratio definitions, reconciliations, and unresolved limitations, and the [production validation record](RELEASE_A_PRODUCTION_VALIDATION.md) for deployment checks.
+Coverage is limited to compatible USD/U.S. GAAP 10-K/10-Q facts; IFRS and foreign-private-issuer 20-F/6-K reporting require a separate module. NVDA's recent broader productive-asset-spending disclosure remains separate from PPE capital spending, so latest PPE-basis FCF remains unavailable. Company Facts omits custom company-specific tags, and generalized coverage is frequently partial. An unavailable SEC module does not prevent the original market workspaces from working. See [Release A.1 coverage and methodology](RELEASE_A1_GENERALIZED_COVERAGE.md) for the expanded live matrix and unsupported cases, [Release A hardening](RELEASE_A_HARDENING.md) for retained pilot methods, and the [production validation record](RELEASE_A_PRODUCTION_VALIDATION.md) for prior deployment checks.
 
 An optional, default-off chart overlay uses the existing split-adjusted
 current-share price (without dividend reinvestment) at the latest trading close
@@ -97,8 +97,10 @@ pytest
 
 Ordinary tests are deterministic and offline. Live Yahoo checks are marked
 `integration` and are excluded from CI by default.
-The live SEC pilot is also opt-in: set `RUN_SEC_INTEGRATION=1` and a private
+The live SEC pilot and generalized issuer matrix are opt-in: set `RUN_SEC_INTEGRATION=1` and a private
 `SEC_USER_AGENT`, then run `pytest -q tests/test_integration_sec.py`.
+For reproducible per-metric coverage evidence, run `python -m scripts.validate_sec_coverage`
+with the same private environment configuration. No contact is included in the evidence.
 
 ## Repository architecture
 

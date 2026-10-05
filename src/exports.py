@@ -253,19 +253,26 @@ def combined_research_html(
             for heading, figure in build_fundamentals_figures(
                 fundamentals, theme=theme, market=result,
                 price_overlay=financial_price_overlay,
+                frequency="annual" if not fundamentals.annual.empty else "quarterly",
             ).items()
         )
         lineage = fundamentals.observations
         if "period_end" in lineage:
             lineage = lineage.sort_values("period_end").tail(20)
         financial_content = (
-            financial_cards + financial_charts
+            "<div class='section-copy'>" + html.escape(fundamentals.metadata.get("mapping_scope", "Issuer-specific audited override")) + "</div>" + financial_cards + financial_charts
             + ("<div class='section-copy'>Share-price overlays use the validated split-adjusted current-share price (no dividend reinvestment), aligned to the latest trading close on or before fiscal-period end within seven calendar days. Financial results were disclosed later and were not known at fiscal year-end.</div>" if financial_price_overlay else "")
             + "<h3>Annual SEC Statement Summary</h3>" + _report_table(fundamentals.annual, fundamentals.identity.reporting_currency, [
                 "fiscal_year", "period_end", "currency", "revenue", "operating_income",
                 "net_income_parent", "eps_basic", "eps_diluted", "eps_diluted_yoy",
                 "roe", "roe_status", "roce", "roce_status", "ocf", "capex_ppe",
                 "productive_asset_spending", "fcf", "fcf_status",
+                "gross_profit", "assets", "liabilities", "current_assets", "current_liabilities", "shareholders_equity",
+                "long_term_debt_noncurrent", "long_term_debt_current", "short_term_borrowings", "commercial_paper",
+            ])
+            + "<h3>Standalone Quarterly SEC Statement Summary</h3>" + _report_table(fundamentals.quarterly, fundamentals.identity.reporting_currency, [
+                "fiscal_year", "fiscal_quarter", "period_end", "currency", "revenue", "operating_income",
+                "net_income_parent", "eps_basic", "eps_diluted", "ocf", "capex_ppe", "fcf", "fcf_status",
             ])
             + "<h3>Financial Data Quality</h3><div class='section-copy'>SEC coverage and reconciliation are assessed separately from Market Data Quality; there is no combined quality score.</div>"
             + "<h3>Concept Coverage</h3>" + _report_table(fundamentals.coverage, fundamentals.identity.reporting_currency)

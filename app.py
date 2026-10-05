@@ -85,6 +85,7 @@ def cached_fundamentals(metadata):
 def analyze_fundamentals(metadata, force_refresh: bool):
     if force_refresh:
         cached_fundamentals.clear(metadata)
+        return run_fundamentals_analysis(metadata, force_refresh=True)
     try:
         return cached_fundamentals(metadata)
     except NonCacheableFinancialResult as exc:

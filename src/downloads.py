@@ -55,7 +55,9 @@ def export_unavailability_reason(
             return None
         if key == "financial_ratios_csv" and fundamentals.available and not fundamentals.ratios.empty:
             return None
-        if fundamentals.available and key in {"fundamentals_html", "financial_annual_csv"}:
+        if fundamentals.available and key == "fundamentals_html":
+            return None
+        if fundamentals.available and key == "financial_annual_csv" and not fundamentals.annual.empty:
             return None
         return fundamentals.reason or f"Financial Fundamentals unavailable ({fundamentals.status})."
     return None
