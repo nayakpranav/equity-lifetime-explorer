@@ -52,6 +52,8 @@ def test_no_dividend_workspace_is_graceful(synthetic_result):
 
     app = AppTest.from_file(str(APP), default_timeout=30)
     app.session_state["analysis_result"] = no_dividend
+    from src.providers.action_dates import ACTION_DATA_VERSION
+    app.session_state["action_data_version"] = ACTION_DATA_VERSION
     app.run()
     app.get("button_group")[0].set_value("Dividends & Total Return").run()
     assert not app.exception

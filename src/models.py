@@ -75,6 +75,8 @@ class ProviderPayload:
     metadata: CompanyMetadata
     info: dict[str, Any]
     provenance: DataSourceRecord
+    action_audit: pd.DataFrame = field(default_factory=pd.DataFrame)
+    action_issues: list[ValidationIssue] = field(default_factory=list)
 
 
 @dataclass
@@ -95,3 +97,4 @@ class AnalysisResult:
     figure: Optional[go.Figure] = None
     volume_figure: Optional[go.Figure] = None
     dividend_figure: Optional[go.Figure] = None
+    action_audit: pd.DataFrame = field(default_factory=pd.DataFrame)

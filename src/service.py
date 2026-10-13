@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
+import pandas as pd
 
 from .analytics import calculate_metrics
 from .corporate_actions import _normalize_provider_actions, actions_to_frame, load_manual_actions, reconcile_actions
 from .dividends import _provider_adjusted_close_available, add_dividend_analytics
+from .dividend_validation import validate_declared_dividends
 from .models import AnalysisResult
 from .providers.yahoo import YahooFinanceProvider
 from .reconstruction import prepare_price_data
@@ -43,14 +45,16 @@ def run_equity_analysis(
     ) = add_dividend_analytics(
         prices, currency=payload.metadata.currency,
         adjusted_close_available=adjusted_close_available,
+        dividend_observations=payload.history["Dividends"] if "Dividends" in payload.history else None,
     )
     metrics = calculate_metrics(prices, actions, payload.metadata)
     metrics.update(calculate_volume_metrics(prices))
+    dividend_external_issues = validate_declared_dividends(prices, dividend_events, payload.metadata)
     issues = validate_analysis(
         prices,
         actions,
         payload.metadata,
-        [*reconciliation_issues, *preparation_issues, *volume_issues, *dividend_issues],
+        [*getattr(payload, "action_issues", []), *reconciliation_issues, *preparation_issues, *volume_issues, *dividend_issues, *dividend_external_issues],
         basis_diagnostics,
     )
     validation = validation_to_frame(issues)
@@ -80,7 +84,7 @@ def run_equity_analysis(
         "equivalent basis, and historical yield uses a split-consistent price denominator. Provider "
         "dividend dates are treated as effective/ex-dividend dates unless payment-date data is explicitly "
         "available. Provider Adjusted Close, when genuinely supplied, is used only as a pre-tax, pre-fee "
-        "total-return proxy."
+        "total-return proxy. Action reconciliation uses exchange-local session dates, never UTC calendar truncation or adjacent-day amount matching. Dedicated and history endpoints are two views of Yahoo data, not independent issuers. Reviewed issuer dividend benchmarks validate only their cited intervals and never overwrite amounts. Event counts refer to positive ex-date sessions; same-date final/special components may be aggregated by the provider."
     )
     LOGGER.info(
         "%s | %d prices | %d actions | %s to %s | validation %s",
@@ -105,4 +109,5 @@ def run_equity_analysis(
         annual_dividends=annual_dividends,
         dividend_status=dividend_status,
         dividend_metrics=dividend_metrics,
+        action_audit=getattr(payload, "action_audit", pd.DataFrame()),
     )

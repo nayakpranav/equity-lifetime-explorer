@@ -58,6 +58,18 @@ current partial calendar year is excluded from structural CAGRs and streaks.
 Adjusted Close is described as a pre-tax, pre-fee total-return proxy only when
 the provider genuinely supplied it.
 
+Corporate-action dates retain the exchange-local calendar date before timezone
+information is removed. History and dedicated Yahoo actions are reconciled by
+the same local session, not adjacent-day/amount guesses. Distinct final/special
+cash components are preserved; unresolved conflicts remain warnings with raw
+timestamp lineage. Dividend event counts describe positive ex-date sessions,
+not the number of separately declared same-date components. Legitimate events
+without a trading close remain in annual/TTM totals; event-date price/yield stays
+unavailable. Independently reviewed issuer benchmarks validate only their cited
+intervals and never overwrite provider values. Unknown external coverage is
+explicitly identified. The complete package includes the provider action audit.
+See [the 13 October 2026 dividend investigation](DIVIDEND_INVESTIGATION_2026-10-13.md).
+
 ### Release A Financial Fundamentals
 
 The financial layer uses the SEC's public [Company Facts and submissions APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces). Release A.1 adds explicit standard `us-gaap` mappings for eligible corporate issuers outside the original four-company pilot. These generalized mappings are **not issuer-specifically audited**; their scope is identified in the UI and reports. Normalized observations retain accession, fiscal dates, filing and acceptance timestamps, original unit, exact decimal value, revision status, source concept, mapping basis/priority and selection lineage. Historical statements are **latest-disclosed**, not point-in-time as-known-at-date valuation inputs. The full observation ledger and selection decisions are exportable.

@@ -16,8 +16,9 @@ import pandas as pd
 import yfinance as yf
 
 from ..config import CACHE_DIR, LOGGER, PROVIDER_NAME
-from ..models import CompanyMetadata, DataSourceRecord, ProviderPayload
+from ..models import CompanyMetadata, DataSourceRecord, ProviderPayload, ValidationIssue
 from .base import MarketDataProvider
+from .action_dates import ACTION_DATA_VERSION, action_rows, session_dates, reconcile_dedicated_actions
 
 def _clean_ticker(ticker: str) -> tuple[str, list[str]]:
     requested = str(ticker).strip().upper()
@@ -70,60 +71,34 @@ def _safe_info(ticker_obj: yf.Ticker) -> dict[str, Any]:
         return {}
 
 
-def _normalize_history_index(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+def _normalize_history_index(frame: pd.DataFrame, exchange_timezone=None) -> tuple[pd.DataFrame, int]:
     result = frame.copy()
-    index = pd.to_datetime(result.index, errors="coerce", utc=True)
+    if exchange_timezone is None and isinstance(frame.index, pd.DatetimeIndex) and frame.index.tz is not None:
+        exchange_timezone = str(frame.index.tz)
+    index = session_dates(result.index, exchange_timezone)
+    result.attrs["action_audit"] = action_rows(frame, index, "history")
     invalid = int(index.isna().sum())
+    action_issues = [ValidationIssue("WARNING", "invalid_history_date",
+        f"{invalid} invalid history timestamps were excluded; any raw action values remain in the audit.")] if invalid else []
     result = result.loc[~index.isna()].copy()
-    index = index[~index.isna()].tz_convert(None).normalize()
+    index = index[~index.isna()]
     result.index = pd.DatetimeIndex(index, name="date")
     duplicate_count = int(result.index.duplicated(keep=False).sum())
+    audit = result.attrs.get("action_audit", [])
     if duplicate_count:
+        action_issues.append(ValidationIssue("WARNING", "action_source_conflict",
+            f"{duplicate_count} history rows share an exchange-local session. Last daily price row retained; duplicate raw action observations remain in the audit and require review."))
         result = result.groupby(level=0).last()
+    result.attrs["action_issues"] = action_issues
+    result.attrs["action_audit"] = audit
+    result.attrs["exchange_timezone"] = exchange_timezone
     result.sort_index(inplace=True)
     return result, duplicate_count + invalid
 
 
-def _merge_dedicated_action_series(history: pd.DataFrame, obj: yf.Ticker) -> tuple[pd.DataFrame, list[str]]:
+def _merge_dedicated_action_series(history: pd.DataFrame, obj: yf.Ticker, exchange_timezone=None) -> tuple[pd.DataFrame, list[str]]:
     """Use dedicated yfinance action endpoints as a defensive fallback/cross-check."""
-    result = history.copy()
-    notes: list[str] = []
-    for attribute, column in (("splits", "Stock Splits"), ("dividends", "Dividends")):
-        try:
-            series = getattr(obj, attribute)
-            if not isinstance(series, pd.Series) or series.empty:
-                continue
-            index = pd.to_datetime(series.index, errors="coerce", utc=True)
-            valid = ~index.isna()
-            dedicated = pd.Series(
-                pd.to_numeric(series.loc[valid], errors="coerce").to_numpy(),
-                index=pd.DatetimeIndex(index[valid]).tz_convert(None).normalize(),
-            ).dropna()
-            dedicated = dedicated[dedicated != 0].groupby(level=0).last()
-            if dedicated.empty:
-                continue
-            if column not in result.columns:
-                result[column] = 0.0
-            missing_dates = dedicated.index.difference(result.index)
-            if len(missing_dates):
-                result = result.reindex(result.index.union(missing_dates).sort_values())
-            existing = pd.to_numeric(result.loc[dedicated.index, column], errors="coerce").fillna(0.0)
-            fill_mask = existing.eq(0.0)
-            if fill_mask.any():
-                dates_to_fill = dedicated.index[fill_mask.to_numpy()]
-                result.loc[dates_to_fill, column] = dedicated.loc[dates_to_fill].to_numpy()
-                notes.append(
-                    f"Filled {len(dates_to_fill)} {column} records from the dedicated Ticker.{attribute} endpoint."
-                )
-            conflicting = (~fill_mask) & ~np.isclose(existing.to_numpy(), dedicated.to_numpy(), rtol=1e-8, atol=1e-12)
-            if np.any(conflicting):
-                notes.append(
-                    f"Detected {int(np.sum(conflicting))} differences between history and Ticker.{attribute}; history values were retained for review."
-                )
-        except Exception as exc:
-            notes.append(f"Dedicated Ticker.{attribute} endpoint unavailable: {exc}")
-    result.sort_index(inplace=True)
-    return result, notes
+    return reconcile_dedicated_actions(history, obj, exchange_timezone or history.attrs.get("exchange_timezone"))
 
 
 class YahooFinanceProvider(MarketDataProvider):
@@ -135,7 +110,7 @@ class YahooFinanceProvider(MarketDataProvider):
     def _cache_path(self, ticker: str) -> Path:
         safe = re.sub(r"[^A-Z0-9_.-]", "_", ticker)
         digest = hashlib.sha256(ticker.encode("utf-8")).hexdigest()[:10]
-        return self.cache_dir / f"yahoo_{safe}_{digest}_max_daily.pkl"
+        return self.cache_dir / f"yahoo_{safe}_{digest}_{ACTION_DATA_VERSION}_max_daily.pkl"
 
     def _read_cache(self, path: Path) -> Optional[ProviderPayload]:
         if not path.exists():
@@ -212,8 +187,13 @@ class YahooFinanceProvider(MarketDataProvider):
                 f"symbol, delisting status, network access, or rate limits.{detail}"
             )
 
-        history, normalized_issues = _normalize_history_index(history)
-        history, action_endpoint_notes = _merge_dedicated_action_series(history, obj)
+        exchange_timezone = str(history.index.tz) if isinstance(history.index, pd.DatetimeIndex) and history.index.tz else None
+        try:
+            exchange_timezone = obj.history_metadata.get("exchangeTimezoneName") or exchange_timezone
+        except Exception:
+            pass  # Unverified timezone gets an explicit reconciliation warning.
+        history, normalized_issues = _normalize_history_index(history, exchange_timezone)
+        history, action_endpoint_notes = _merge_dedicated_action_series(history, obj, exchange_timezone)
         if "Close" not in history.columns or history["Close"].notna().sum() == 0:
             raise ValueError(f"{symbol} history has no usable Close observations.")
 
@@ -253,6 +233,8 @@ class YahooFinanceProvider(MarketDataProvider):
                 break
         notes = alias_notes.copy()
         notes.extend(action_endpoint_notes)
+        notes.append(f"Provider library version: yfinance {yf.__version__}.")
+        notes.append(f"Action date convention: exchange-local session date; timezone={exchange_timezone or 'unverified'}; version={ACTION_DATA_VERSION}.")
         if normalized_issues:
             notes.append(
                 f"Normalized the date index; {normalized_issues} invalid/duplicate rows were encountered."
@@ -285,6 +267,8 @@ class YahooFinanceProvider(MarketDataProvider):
             metadata=metadata,
             info=info,
             provenance=provenance,
+            action_audit=pd.DataFrame(history.attrs.get("action_audit", [])),
+            action_issues=history.attrs.get("action_issues", []),
         )
         try:
             with cache_path.open("wb") as handle:
