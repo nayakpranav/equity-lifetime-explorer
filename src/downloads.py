@@ -7,6 +7,7 @@ from datetime import date
 
 from .exports import export_bundle, safe_ticker, zip_bytes
 from .financial_models import FundamentalsResult
+from .financial_exports import financial_csv
 from .models import AnalysisResult
 
 
@@ -146,6 +147,8 @@ def prepare_complete_package(
     if stamp is not None:
         export_options["stamp"] = stamp
     files = export_bundle(result, complete_export_keys(result, fundamentals), **export_options)
+    if not result.action_audit.empty:
+        files[f"{safe_ticker(result.ticker)}_provider_action_audit_{report_date}.csv"] = financial_csv(result.action_audit)
     if fundamentals is not None:
         excluded = [
             f"{label}: {export_unavailability_reason(result, key, fundamentals)}"

@@ -23,6 +23,7 @@ from .formatting import format_money, format_multiple, format_percent
 from .models import AnalysisResult
 from .report_tables import report_table_html
 from .session_status import assess_latest_rvol
+from .dividend_validation import dividend_diagnostics
 
 
 HISTORY_COLUMNS = [
@@ -124,6 +125,8 @@ def standalone_html(
         supporting = "<h2>Annual Dividend Summary</h2>" + report_table_html(
             result.annual_dividends.tail(15), result.metadata.currency,
         )
+    if report == "dividend":
+        supporting += "<h2>Dividend Source Validation</h2>" + report_table_html(dividend_diagnostics(result), result.metadata.currency)
     figure_html = figure.to_html(full_html=False, include_plotlyjs=include_plotlyjs, config={"displaylogo": False, "responsive": True})
     portable_note = (
         "Self-contained Plotly JavaScript is embedded."
@@ -375,7 +378,7 @@ main{{max-width:1500px;margin:auto;padding:28px clamp(16px,4vw,58px) 60px}}.hero
 <section class='cards'>{_report_cards(_kpi_cards(result, 'lifetime'))}</section>
 <section class='report-section' id='price'><h2>Price &amp; Ownership</h2><div class='section-copy'>Raw market quotations, provider-adjusted history and the mechanical ownership-equivalent reconstruction.</div><div class='chart'>{price_chart}</div><div class='callout'><strong>Ownership-equivalent interpretation</strong><span>{html.escape(ownership)} This is a mechanical reconstruction, not a counterfactual market-price forecast.</span></div></section>
 <section class='report-section' id='volume'><h2>Volume &amp; Liquidity</h2><div class='section-copy'>Long-run share volume, dollar volume, relative activity and unusual participation. {html.escape(assess_latest_rvol(result).detail)}</div><div class='cards'>{_report_cards(_kpi_cards(result, 'volume'))}</div><div class='chart'>{volume_chart}</div><h3>Notable Volume Events</h3>{_report_table(volume_events, metadata.currency, volume_columns)}<div class='section-copy'>High volume indicates elevated participation; it does not identify participant classes or establish accumulation, distribution or causation.</div></section>
-<section class='report-section' id='dividends'><h2>Dividends &amp; Total Return</h2><div class='section-copy'>Provider-reported dividends, completed-year growth, historical yield and total-return context.</div>{dividend_cards}<div class='chart'>{dividend_chart}</div>{dividend_table}</section>
+<section class='report-section' id='dividends'><h2>Dividends &amp; Total Return</h2><div class='section-copy'>Provider-reported dividends, completed-year growth, historical yield and total-return context.</div>{dividend_cards}<div class='chart'>{dividend_chart}</div>{dividend_table}<h3>Dividend Source Validation</h3>{_report_table(dividend_diagnostics(result), metadata.currency)}</section>
 <section class='report-section' id='fundamentals'><h2>Financial Fundamentals</h2><div class='section-copy'>SEC-reported operating performance, cash generation and financial position.</div>{financial_content}</section>
 <section class='report-section' id='actions'><h2>Corporate Actions</h2><div class='section-copy'>Provider and researched share-changing events used by the existing validated reconstruction.</div>{_report_table(result.actions, metadata.currency, action_columns)}</section>
 <section class='report-section' id='validation'><h2>Market Data Quality</h2><div class='section-copy'>Market-data reconstruction confidence: <strong>{html.escape(provenance.validation_status)}</strong>. This assessment does not score SEC financial coverage or statement reconciliation.</div>{_report_table(result.validation, metadata.currency)}</section>

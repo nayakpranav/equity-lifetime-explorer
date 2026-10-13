@@ -21,6 +21,8 @@ from src.downloads import (
 )
 from src.financial_models import FundamentalsResult
 from src.providers.yahoo import clean_ticker
+from src.providers.action_dates import ACTION_DATA_VERSION
+from src.dividend_validation import dividend_diagnostics
 from src.research_service import run_fundamentals_analysis
 from src.service import run_equity_analysis
 from src.session_status import assess_latest_rvol
@@ -55,7 +57,7 @@ st.markdown(
 
 
 @st.cache_data(ttl="12h", max_entries=32, show_spinner=False)
-def cached_analysis(ticker: str):
+def cached_analysis(ticker: str, action_data_version: str = ACTION_DATA_VERSION):
     """Cache one canonical result per normalized ticker across UI-only reruns."""
     return run_equity_analysis(ticker, force_refresh=False, cache_hours=12.0)
 
@@ -63,9 +65,9 @@ def cached_analysis(ticker: str):
 def analyze(ticker: str, force_refresh: bool):
     symbol, _ = clean_ticker(ticker)
     if force_refresh:
-        cached_analysis.clear(symbol)
+        cached_analysis.clear(symbol, ACTION_DATA_VERSION)
         return run_equity_analysis(symbol, force_refresh=True, cache_hours=12.0)
-    return cached_analysis(symbol)
+    return cached_analysis(symbol, ACTION_DATA_VERSION)
 
 
 class NonCacheableFinancialResult(Exception):
@@ -151,6 +153,16 @@ def render_volume_workspace(result, theme: str) -> None:
 
 def render_dividend_workspace(result, theme: str) -> None:
     st.subheader("Dividends & Total Return")
+    diagnostics = dividend_diagnostics(result)
+    if not diagnostics.empty:
+        unresolved = diagnostics.loc[diagnostics.severity.isin(["WARNING", "ERROR"])]
+        if not unresolved.empty:
+            st.warning("Dividend/action source validation needs review. Provider values were not silently adjusted; inspect the diagnostics before interpreting dividend metrics.")
+        with st.expander("Dividend source checks and independent evidence", expanded=not unresolved.empty):
+            st.dataframe(diagnostics, width="stretch", hide_index=True)
+            if not result.action_audit.empty:
+                st.dataframe(result.action_audit.tail(100), width="stretch", hide_index=True)
+            st.caption("Yahoo history/dedicated agreement is not independent issuer verification. Benchmarks apply only to their cited intervals. The complete package includes the raw timestamp/action reconciliation audit.")
     if result.dividend_status == "NONE":
         st.info(
             "**No cash-dividend history found**\n\n"
@@ -394,6 +406,15 @@ if "analysis_result" not in st.session_state:
     st.session_state.analysis_result = None
 if "financial_result" not in st.session_state:
     st.session_state.financial_result = None
+if st.session_state.get("action_data_version") != ACTION_DATA_VERSION:
+    stale_result = st.session_state.analysis_result is not None
+    st.session_state.analysis_result = None
+    st.session_state.financial_result = None
+    st.session_state.prepared_download = None
+    st.session_state.prepared_export_context = None
+    st.session_state.action_data_version = ACTION_DATA_VERSION
+    if stale_result:
+        st.info("Market-data processing has been updated. Run ANALYZE again before using results or downloads.")
 if analyze_clicked:
     try:
         clean_ticker(ticker)

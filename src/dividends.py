@@ -121,6 +121,7 @@ def add_dividend_analytics(
     *,
     currency: str,
     adjusted_close_available: bool,
+    dividend_observations: pd.Series | None = None,
 ) -> tuple[
     pd.DataFrame,
     pd.DataFrame,
@@ -133,11 +134,14 @@ def add_dividend_analytics(
     frame = prices.copy()
     issues: list[ValidationIssue] = []
     provider_dividend = pd.to_numeric(
+        dividend_observations if dividend_observations is not None else
         frame.get("dividend", pd.Series(np.nan, index=frame.index)), errors="coerce"
     )
+    provider_dividend = provider_dividend.loc[provider_dividend.index.to_series().between(frame.index.min(), frame.index.max()).to_numpy()]
+    provider_dividend = provider_dividend.reindex(frame.index.union(provider_dividend.index).sort_values())
     frame["provider_dividend"] = provider_dividend
     finite_mask = pd.Series(
-        np.isfinite(provider_dividend.to_numpy(dtype=float)), index=frame.index
+        np.isfinite(provider_dividend.to_numpy(dtype=float)), index=provider_dividend.index
     )
     finite_dividend = provider_dividend.where(finite_mask)
     positive_mask = finite_dividend.gt(0).fillna(False)
@@ -199,15 +203,14 @@ def add_dividend_analytics(
         "ttm_dividend", "ttm_dividend_yield", "calendar_year", "calendar_month",
         "calendar_quarter", "date_basis",
     ]
-    events = pd.DataFrame(index=frame.index[event_mask])
+    event_dates = provider_dividend.index[event_mask]
+    events = pd.DataFrame(index=event_dates)
     if len(events):
-        events["provider_dividend"] = frame.loc[event_mask, "provider_dividend"].to_numpy()
+        events["provider_dividend"] = provider_dividend.loc[event_dates].to_numpy()
         events["currency"] = currency
-        events["split_adjusted_price_current_share"] = frame.loc[
-            event_mask, "split_adjusted_price_current_share"
-        ].to_numpy()
-        events["ttm_dividend"] = frame.loc[event_mask, "ttm_dividend"].to_numpy()
-        events["ttm_dividend_yield"] = frame.loc[event_mask, "ttm_dividend_yield"].to_numpy()
+        events["split_adjusted_price_current_share"] = frame["split_adjusted_price_current_share"].reindex(event_dates).to_numpy()
+        events["ttm_dividend"] = ttm.reindex(event_dates).to_numpy()
+        events["ttm_dividend_yield"] = (ttm / denominator).reindex(event_dates).to_numpy()
         events["calendar_year"] = events.index.year.astype(int)
         events["calendar_month"] = events.index.month.astype(int)
         events["calendar_quarter"] = [f"Q{quarter}" for quarter in events.index.quarter]
@@ -218,7 +221,6 @@ def add_dividend_analytics(
         events = pd.DataFrame(columns=event_columns)
 
     current_calendar_year = datetime.now(timezone.utc).year
-    event_dates = frame.index[event_mask]
     annual_columns = [
         "year", "annual_dividend", "payment_count", "yoy_growth",
         "completed_year", "ytd", "year_label",
@@ -227,8 +229,8 @@ def add_dividend_analytics(
         first_year = int(event_dates.min().year)
         last_year = int(frame.index.max().year)
         years = pd.Index(range(first_year, last_year + 1), name="year")
-        annual_sum = finite_dividend.groupby(frame.index.year).sum(min_count=1).reindex(years).fillna(0.0)
-        payment_count = positive_mask.groupby(frame.index.year).sum().reindex(years).fillna(0).astype(int)
+        annual_sum = finite_dividend.groupby(finite_dividend.index.year).sum(min_count=1).reindex(years).fillna(0.0)
+        payment_count = positive_mask.groupby(positive_mask.index.year).sum().reindex(years).fillna(0).astype(int)
         annual = pd.DataFrame(
             {
                 "year": np.asarray(years, dtype=int),
@@ -280,12 +282,12 @@ def add_dividend_analytics(
     if current_year_is_partial:
         same_period_key = latest_date.month * 100 + latest_date.day
         current_mask = (
-            (frame.index.year == latest_year)
-            & ((frame.index.month * 100 + frame.index.day) <= same_period_key)
+            (finite_dividend.index.year == latest_year)
+            & ((finite_dividend.index.month * 100 + finite_dividend.index.day) <= same_period_key)
         )
         prior_mask = (
-            (frame.index.year == latest_year - 1)
-            & ((frame.index.month * 100 + frame.index.day) <= same_period_key)
+            (finite_dividend.index.year == latest_year - 1)
+            & ((finite_dividend.index.month * 100 + finite_dividend.index.day) <= same_period_key)
         )
         current_year_ytd = float(finite_dividend.loc[current_mask].fillna(0.0).sum())
         if prior_mask.any():
@@ -391,14 +393,14 @@ def add_dividend_analytics(
         if aggregation_ok else "Annual dividend totals do not reconcile to event-level provider observations.",
     ))
     expected_ttm = rolling_input.rolling("365D", min_periods=1).sum().where(ttm_positive_count.gt(0))
-    ttm_ok = np.allclose(frame["ttm_dividend"], expected_ttm, equal_nan=True)
+    ttm_ok = np.allclose(frame["ttm_dividend"], expected_ttm.reindex(frame.index), equal_nan=True)
     issues.append(ValidationIssue(
         "PASS" if ttm_ok else "ERROR", "ttm_dividend_integrity",
         "TTM dividend uses a date-aware trailing 365-day window."
         if ttm_ok else "TTM dividend failed its date-aware rolling integrity check.",
     ))
     expected_yield = (expected_ttm / denominator).where(expected_ttm.ge(0) & denominator.notna())
-    yield_ok = np.allclose(frame["ttm_dividend_yield"], expected_yield, equal_nan=True)
+    yield_ok = np.allclose(frame["ttm_dividend_yield"], expected_yield.reindex(frame.index), equal_nan=True)
     issues.append(ValidationIssue(
         "PASS" if yield_ok else "ERROR", "historical_yield_integrity",
         "Historical yield uses provider dividends and a split-consistent current-share price denominator."
@@ -413,6 +415,10 @@ def add_dividend_analytics(
         "The current partial calendar year is excluded from structural CAGRs and streaks."
         if partial_ok else "A partial calendar year was incorrectly included in structural metrics.",
     ))
+    missing_event_price = len(event_dates.difference(frame.index))
+    if missing_event_price:
+        issues.append(ValidationIssue("WARNING", "dividend_event_without_price",
+            f"{missing_event_price} dividend sessions lack a trading close. Events remain in annual/TTM calculations; event-date yield/price is unavailable, not fabricated."))
     issues.append(ValidationIssue(
         "PASS" if total_return_available else "INFO", "adjusted_close_total_return_availability",
         "Genuine provider Adjusted Close is available for the total-return proxy."
